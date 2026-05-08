@@ -48,6 +48,8 @@ All exports are available under the global `IDBActiveRecord` object:
 
 ## Quick Start
 
+### With npm (TypeScript / ESM)
+
 ```typescript
 import { ActiveRecord, Database } from 'idb-activerecord';
 
@@ -87,6 +89,40 @@ await user.destroy();
 
 // Query with conditions
 const adults = await User.where('age', '>=', 18).all();
+```
+
+### With CDN (plain HTML)
+
+```html
+<!DOCTYPE html>
+<html>
+<head>
+  <script src="https://cdn.jsdelivr.net/npm/idb-activerecord@1.0.0/dist/idb-activerecord.min.js"></script>
+</head>
+<body>
+  <script>
+    const { ActiveRecord, Database } = IDBActiveRecord;
+
+    class User extends ActiveRecord {
+      static tableName = 'users';
+    }
+
+    const db = new Database('my-app', 1);
+    db.registerModel(User);
+
+    db.connect().then(async () => {
+      const user = await User.create({
+        name: 'John Doe',
+        email: 'john@example.com',
+        age: 30
+      });
+
+      const adults = await User.where('age', '>=', 18).all();
+      console.log(adults);
+    });
+  </script>
+</body>
+</html>
 ```
 
 ## API Reference
