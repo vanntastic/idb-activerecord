@@ -10,6 +10,7 @@ export class ActiveRecord<T = any> {
   protected static indexes: any[] = [];
   protected static belongsTo: Record<string, any> = {};
   protected static hasMany: Record<string, any> = {};
+  protected static hasOne: Record<string, any> = {};
   protected static beforeCreate?: (record: any) => void;
   protected static afterCreate?: (record: any) => void;
   protected static beforeUpdate?: (record: any) => void;
@@ -195,5 +196,51 @@ export class ActiveRecord<T = any> {
     }
 
     return this.errors.length === 0;
+  }
+
+  // Relationship methods
+  async hasOne(relationshipName: string): Promise<any> {
+    const constructor = this.constructor as typeof ActiveRecord;
+    const relatedModel = constructor.hasOne?.[relationshipName];
+    
+    if (!relatedModel) {
+      throw new Error(`Relationship ${relationshipName} not defined in hasOne`);
+    }
+
+    const foreignKey = `${constructor.tableName}Id`;
+    return await relatedModel.where(foreignKey, this.id).first();
+  }
+
+  async hasMany(relationshipName: string): Promise<any[]> {
+    const constructor = this.constructor as typeof ActiveRecord;
+    const relatedModel = constructor.hasMany?.[relationshipName];
+    
+    if (!relatedModel) {
+      throw new Error(`Relationship ${relationshipName} not defined in hasMany`);
+    }
+
+    const foreignKey = `${constructor.tableName}Id`;
+    return await relatedModel.where(foreignKey, this.id).all();
+  }
+
+  async belongsTo(relationshipName: string): Promise<any> {
+    const constructor = this.constructor as typeof ActiveRecord;
+    const relatedModel = constructor.belongsTo?.[relationshipName];
+    
+    if (!relatedModel) {
+      throw new Error(`Relationship ${relationshipName} not defined in belongsTo`);
+    }
+
+    const foreignKey = `${relationshipName}Id`;
+    const foreignId = (this as any)[foreignKey];
+    
+    if (!foreignId) return null;
+    
+    return await relatedModel.find(foreignId);
+  }
+
+  static async beginTransaction(): Promise<IDBTransaction> {
+    if (!this.db) throw new Error('Database not connected');
+    return this.db.transaction([this.tableName], 'readwrite');
   }
 }

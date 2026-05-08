@@ -63,8 +63,9 @@ export class Database {
   }
 
   async migrateUp(): Promise<void> {
-    // Migration logic would go here
-    console.log('Migrations would run here');
+    if (!this.db) throw new Error('Database not connected');
+    // Migration logic would be implemented here
+    // This is a placeholder for future migration runner
   }
 
   getDB(): IDBDatabase {

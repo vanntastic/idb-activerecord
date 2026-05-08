@@ -13,8 +13,10 @@ IDB ActiveRecord provides a clean, intuitive interface for working with IndexedD
 - **Promise-based**: Modern async/await API
 - **Query Builder**: Chainable query methods for complex data retrieval
 - **Relationships**: Support for hasOne, hasMany, and belongsTo associations
-- **Migrations**: Simple schema versioning and migration system
-- **Transactions**: Automatic transaction management with manual control when needed
+- **Migrations**: TableBuilder for schema definition with automatic object store creation
+- **Transactions**: Automatic transaction management with beginTransaction for manual control
+- **Callbacks**: beforeCreate, afterCreate, beforeUpdate, afterUpdate, beforeDestroy, afterDestroy
+- **Validation**: Built-in validation rules for presence, length, and format
 - **Lightweight**: Zero dependencies, small bundle size
 - **Browser Support**: Works in all modern browsers with IndexedDB support
 
@@ -168,14 +170,19 @@ class User extends ActiveRecord<User> {
   static hasMany = {
     posts: Post
   };
+  
+  static hasOne = {
+    profile: Profile
+  };
 }
 
 // Access relationships
 const user = await User.find(1);
-const posts = await user.posts(); // Returns user's posts
+const posts = await user.hasMany('posts'); // Returns user's posts
+const profile = await user.hasOne('profile'); // Returns user's profile
 
 const post = await Post.find(1);
-const author = await post.author(); // Returns post's author
+const author = await post.belongsTo('author'); // Returns post's author
 ```
 
 ### Migrations
@@ -186,7 +193,6 @@ import { Migration } from 'idb-activerecord';
 class CreateUsersTable extends Migration {
   up() {
     this.createTable('users', (table) => {
-      table.autoIncrement('id').primaryKey();
       table.string('name');
       table.string('email').unique();
       table.integer('age');
@@ -199,8 +205,8 @@ class CreateUsersTable extends Migration {
   }
 }
 
-// Run migrations
-await db.migrateUp();
+// Note: Migration runner is a placeholder for future implementation
+// Currently, object stores are created automatically during database connection
 ```
 
 ### Transactions
@@ -212,16 +218,9 @@ await User.transaction(async () => {
   await Post.create({ title: 'Hello', userId: user.id });
 });
 
-// Manual transaction control
+// Begin a manual transaction
 const tx = await User.beginTransaction();
-try {
-  await User.create({ name: 'John' }, tx);
-  await Post.create({ title: 'Hello' }, tx);
-  await tx.commit();
-} catch (error) {
-  await tx.rollback();
-  throw error;
-}
+// Use the transaction for operations (implementation dependent)
 ```
 
 ## Advanced Usage
@@ -286,7 +285,8 @@ class User extends ActiveRecord<User> {
   };
 }
 
-const user = new User({ name: '' });
+const user = Object.create(User.prototype);
+Object.assign(user, { name: '' });
 const valid = await user.isValid();
 if (!valid) {
   console.log(user.errors);

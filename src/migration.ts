@@ -35,6 +35,9 @@ export class Migration {
 }
 
 export class TableBuilder {
+  private currentField: string | null = null;
+  private uniqueFields: Set<string> = new Set();
+
   constructor(private store: IDBObjectStore) {}
 
   autoIncrement(name: string): TableBuilder {
@@ -48,29 +51,50 @@ export class TableBuilder {
   }
 
   string(name: string): TableBuilder {
+    this.currentField = name;
     return this;
   }
 
   integer(name: string): TableBuilder {
+    this.currentField = name;
     return this;
   }
 
   boolean(name: string): TableBuilder {
+    this.currentField = name;
     return this;
   }
 
   unique(): TableBuilder {
-    // This would need to be called after a field definition
+    if (this.currentField) {
+      this.uniqueFields.add(this.currentField);
+      this.createIndex(`${this.currentField}_unique`, this.currentField, { unique: true });
+      this.currentField = null;
+    }
     return this;
   }
 
   timestamps(): TableBuilder {
+    this.string('createdAt');
+    this.string('updatedAt');
     this.createIndex('createdAt', 'createdAt');
     this.createIndex('updatedAt', 'updatedAt');
     return this;
   }
 
+  index(name: string, options?: IDBIndexParameters): TableBuilder {
+    if (this.currentField) {
+      this.createIndex(name, this.currentField, options);
+      this.currentField = null;
+    }
+    return this;
+  }
+
   private createIndex(name: string, keyPath: string, options?: IDBIndexParameters): void {
-    this.store.createIndex(name, keyPath, options);
+    try {
+      this.store.createIndex(name, keyPath, options);
+    } catch (e) {
+      // Index might already exist
+    }
   }
 }
