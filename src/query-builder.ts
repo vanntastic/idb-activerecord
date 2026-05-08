@@ -12,6 +12,7 @@ export class QueryBuilder<T> {
 
   where(field: string, operator: string, value?: any): QueryBuilder<T> {
     if (value === undefined) {
+      // Handle shorthand: where('field', value) becomes where('field', '=', value)
       this.conditions.push({ field: field, operator: '=', value: operator });
     } else {
       this.conditions.push({ field, operator, value });

@@ -13,7 +13,8 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "vitest",
+    "test:coverage": "vitest --coverage",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
@@ -29,6 +30,9 @@
     "url": "https://github.com/vannek/idb-activerecord.git"
   },
   "devDependencies": {
-    "typescript": "^5.3.3"
+    "@vitest/coverage-v8": "^1.2.0",
+    "jsdom": "^27.0.1",
+    "typescript": "^5.3.3",
+    "vitest": "^1.2.0"
   }
 }
