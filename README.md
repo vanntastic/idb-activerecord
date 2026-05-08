@@ -22,12 +22,28 @@ IDB ActiveRecord provides a clean, intuitive interface for working with IndexedD
 
 ## Installation
 
+**npm / yarn / pnpm**
+
 ```bash
 npm install idb-activerecord
 # or
 yarn add idb-activerecord
 # or
 pnpm add idb-activerecord
+```
+
+**CDN (via cdnjs / jsDelivr)**
+
+```html
+<script src="https://cdn.jsdelivr.net/npm/idb-activerecord/dist/idb-activerecord.min.js"></script>
+```
+
+All exports are available under the global `IDBActiveRecord` object:
+
+```html
+<script>
+  const { Database, ActiveRecord } = IDBActiveRecord;
+</script>
 ```
 
 ## Quick Start

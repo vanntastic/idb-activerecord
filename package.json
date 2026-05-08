@@ -6,12 +6,22 @@
   "author": "Vann Ek",
   "type": "module",
   "main": "dist/index.js",
+  "module": "dist/index.js",
+  "browser": "dist/idb-activerecord.min.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
   "files": [
     "dist"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node scripts/build-cdn.js",
+    "build:types": "tsc",
+    "build:cdn": "node scripts/build-cdn.js",
     "dev": "tsc --watch",
     "test": "vitest",
     "test:coverage": "vitest --coverage",
@@ -32,6 +42,7 @@
   },
   "devDependencies": {
     "@vitest/coverage-v8": "^1.2.0",
+    "esbuild": "^0.28.0",
     "jsdom": "^27.0.1",
     "typescript": "^5.3.3",
     "vitest": "^1.2.0"
