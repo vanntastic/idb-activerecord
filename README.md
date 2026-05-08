@@ -32,10 +32,10 @@ yarn add idb-activerecord
 pnpm add idb-activerecord
 ```
 
-**CDN (via cdnjs / jsDelivr)**
+**CDN (via jsDelivr)**
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/idb-activerecord/dist/idb-activerecord.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/idb-activerecord@1.0.0/dist/idb-activerecord.min.js"></script>
 ```
 
 All exports are available under the global `IDBActiveRecord` object:
