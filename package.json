@@ -1,12 +1,34 @@
 {
   "name": "idb-activerecord",
   "version": "1.0.0",
-  "description": "active record for indexeddb",
+  "description": "ActiveRecord-style API for IndexedDB with TypeScript support",
   "license": "ISC",
   "author": "Vann Ek",
-  "type": "commonjs",
-  "main": "index.js",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "indexeddb",
+    "activerecord",
+    "orm",
+    "database",
+    "browser",
+    "typescript"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vannek/idb-activerecord.git"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3"
   }
 }
