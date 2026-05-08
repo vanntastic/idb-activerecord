@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>IDB ActiveRecord Demo</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 2rem;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      color: white;
+      margin-bottom: 2rem;
+      text-align: center;
+      font-size: 2.5rem;
+      text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 1.5rem;
+      margin-bottom: 2rem;
+    }
+
+    .card {
+      background: white;
+      border-radius: 12px;
+      padding: 1.5rem;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+      transition: transform 0.2s;
+    }
+
+    .card:hover {
+      transform: translateY(-2px);
+    }
+
+    .card h2 {
+      color: #667eea;
+      margin-bottom: 1rem;
+      font-size: 1.25rem;
+    }
+
+    .form-group {
+      margin-bottom: 1rem;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 0.5rem;
+      color: #333;
+      font-weight: 500;
+    }
+
+    input {
+      width: 100%;
+      padding: 0.75rem;
+      border: 2px solid #e2e8f0;
+      border-radius: 6px;
+      font-size: 1rem;
+      transition: border-color 0.2s;
+    }
+
+    input:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+
+    button {
+      width: 100%;
+      padding: 0.75rem;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.2s;
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+    }
+
+    button:active {
+      transform: translateY(0);
+    }
+
+    .output {
+      background: #f7fafc;
+      border-radius: 8px;
+      padding: 1rem;
+      margin-top: 1rem;
+      max-height: 300px;
+      overflow-y: auto;
+      font-family: 'Monaco', 'Menlo', monospace;
+      font-size: 0.875rem;
+    }
+
+    .output pre {
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
+
+    .user-list {
+      list-style: none;
+      margin-top: 1rem;
+    }
+
+    .user-item {
+      background: #f7fafc;
+      padding: 1rem;
+      margin-bottom: 0.5rem;
+      border-radius: 6px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .user-item button {
+      width: auto;
+      padding: 0.5rem 1rem;
+      font-size: 0.875rem;
+      background: #ef4444;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+
+    .stat-card {
+      background: white;
+      border-radius: 8px;
+      padding: 1.5rem;
+      text-align: center;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+
+    .stat-card h3 {
+      font-size: 2rem;
+      color: #667eea;
+      margin-bottom: 0.5rem;
+    }
+
+    .stat-card p {
+      color: #666;
+      font-size: 0.875rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🗄️ IDB ActiveRecord Demo</h1>
+
+    <div class="stats">
+      <div class="stat-card">
+        <h3 id="totalUsers">0</h3>
+        <p>Total Users</p>
+      </div>
+      <div class="stat-card">
+        <h3 id="adultUsers">0</h3>
+        <p>Adults (18+)</p>
+      </div>
+      <div class="stat-card">
+        <h3 id="recentUsers">0</h3>
+        <p>Created Today</p>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <h2>➕ Create User</h2>
+        <div class="form-group">
+          <label for="userName">Name</label>
+          <input type="text" id="userName" placeholder="John Doe">
+        </div>
+        <div class="form-group">
+          <label for="userEmail">Email</label>
+          <input type="email" id="userEmail" placeholder="john@example.com">
+        </div>
+        <div class="form-group">
+          <label for="userAge">Age</label>
+          <input type="number" id="userAge" placeholder="30">
+        </div>
+        <button onclick="createUser()">Create User</button>
+      </div>
+
+      <div class="card">
+        <h2>🔍 Find User</h2>
+        <div class="form-group">
+          <label for="findUserId">User ID</label>
+          <input type="number" id="findUserId" placeholder="1">
+        </div>
+        <button onclick="findUser()">Find User</button>
+        <div class="output" id="findOutput"></div>
+      </div>
+
+      <div class="card">
+        <h2>📊 Query Users</h2>
+        <div class="form-group">
+          <label for="queryAge">Minimum Age</label>
+          <input type="number" id="queryAge" placeholder="18">
+        </div>
+        <button onclick="queryUsers()">Query Users</button>
+        <div class="output" id="queryOutput"></div>
+      </div>
+
+      <div class="card">
+        <h2>📝 All Users</h2>
+        <button onclick="loadAllUsers()">Load All Users</button>
+        <ul class="user-list" id="userList"></ul>
+      </div>
+
+      <div class="card">
+        <h2>🔄 Update User</h2>
+        <div class="form-group">
+          <label for="updateUserId">User ID</label>
+          <input type="number" id="updateUserId" placeholder="1">
+        </div>
+        <div class="form-group">
+          <label for="updateAge">New Age</label>
+          <input type="number" id="updateAge" placeholder="31">
+        </div>
+        <button onclick="updateUser()">Update User</button>
+      </div>
+
+      <div class="card">
+        <h2>🗑️ Delete User</h2>
+        <div class="form-group">
+          <label for="deleteUserId">User ID</label>
+          <input type="number" id="deleteUserId" placeholder="1">
+        </div>
+        <button onclick="deleteUser()">Delete User</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="/examples/app.js"></script>
+</body>
+</html>

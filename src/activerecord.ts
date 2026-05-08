@@ -1,7 +1,7 @@
 // Base ActiveRecord class
 
-import { QueryBuilder } from './query-builder';
-import { ValidationRule } from './types';
+import { QueryBuilder } from './query-builder.js';
+import { ValidationRule } from './types.js';
 
 export class ActiveRecord<T = any> {
   id?: number;
