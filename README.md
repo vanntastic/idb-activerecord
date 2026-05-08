@@ -355,7 +355,7 @@ if (!valid) {
 
 ## Contributing
 
-Contributions are welcome! Please read our contributing guidelines before submitting PRs.
+Contributions are welcome! Feel free to open a PR or issue.
 
 ## License
 
