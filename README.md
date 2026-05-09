@@ -93,7 +93,7 @@ const adults = await User.where('age', '>=', 18).all();
 
 ### With CDN (plain HTML)
 
-View this example in [CodeSandbox](https://codesandbox.io/p/sandbox/cqjngw.
+View this example in [CodeSandbox](https://codesandbox.io/p/sandbox/cqjngw)
 
 ```html
 <!DOCTYPE html>
