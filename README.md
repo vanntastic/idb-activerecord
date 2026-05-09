@@ -93,13 +93,19 @@ const adults = await User.where('age', '>=', 18).all();
 
 ### With CDN (plain HTML)
 
+View this example in [CodeSandbox](https://codesandbox.io/p/sandbox/cqjngw.
+
 ```html
 <!DOCTYPE html>
 <html>
 <head>
-  <script src="https://cdn.jsdelivr.net/npm/idb-activerecord@1.0.0/dist/idb-activerecord.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/idb-activerecord@1.0.1/dist/idb-activerecord.min.js"></script>
 </head>
 <body>
+  <p>To view the database: open your devTools > Application > IndexedDB > my-app > users</p>
+  <ul id="user-list"></ul>
+  <button id="clear-btn">Clear Database</button>
+
   <script>
     const { ActiveRecord, Database } = IDBActiveRecord;
 
@@ -110,15 +116,30 @@ const adults = await User.where('age', '>=', 18).all();
     const db = new Database('my-app', 1);
     db.registerModel(User);
 
-    db.connect().then(async () => {
-      const user = await User.create({
-        name: 'John Doe',
-        email: 'john@example.com',
-        age: 30
+    async function renderUsers() {
+      const users = await User.where('age', '>=', 18).all();
+      const list = document.getElementById('user-list');
+      list.innerHTML = '';
+      users.forEach(user => {
+        const li = document.createElement('li');
+        li.textContent = `${user.name} (${user.email}) — age ${user.age}`;
+        list.appendChild(li);
       });
+    }
 
-      const adults = await User.where('age', '>=', 18).all();
-      console.log(adults);
+    db.connect().then(async () => {
+      await User.create({ name: 'John Doe', email: 'john@example.com', age: 30 });
+      await User.create({ name: 'Jane Smith', email: 'jane@example.com', age: 25 });
+
+      await renderUsers();
+
+      document.getElementById('clear-btn').addEventListener('click', async () => {
+        const all = await User.all();
+        for (const user of all) {
+          await user.destroy();
+        }
+        await renderUsers();
+      });
     });
   </script>
 </body>
