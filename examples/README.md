@@ -1,8 +1,8 @@
-# IDB ActiveRecord Browser Demo
+# IDB ActiveRecord Examples
 
-This folder contains a browser-based demo of the IDB ActiveRecord library.
+Browser-based demos of the IDB ActiveRecord library.
 
-## Running the Demo
+## Running
 
 Start the example server:
 
@@ -12,31 +12,29 @@ npm run example
 
 Then open your browser to: http://localhost:8080
 
-## Features Demonstrated
+## Available Examples
 
-The demo showcases all major features of the library:
+| Example | Path | Description |
+|---------|------|-------------|
+| **Basic CRUD** | `/examples/basic-crud/` | Full CRUD demo with users, queries, validation, and statistics |
+| **REST Sync** | `/examples/rest-sync/` | Sync local IndexedDB with a mock REST API using `RestAdapter` |
 
-- **Create Users**: Add new users with name, email, and age
-- **Find Users**: Look up users by ID
-- **Query Users**: Filter users by age or other criteria
-- **List All Users**: View all users in the database
-- **Update Users**: Modify user information
-- **Delete Users**: Remove users from the database
-- **Validation**: Demonstrates validation rules (presence, format, length)
-- **Statistics**: Real-time stats showing total users, adults, etc.
+## Basic CRUD
 
-## Technical Details
+Showcases all major library features:
 
-- The demo imports the library directly from source (`../src/index.js`)
-- Uses a simple Node.js HTTP server to serve static files
-- All data is stored in IndexedDB in the browser
-- No backend required - everything runs client-side
+- Create, read, update, delete users
+- Query with `where()`, `orderBy()`, `limit()`
+- Validation (presence, format, length)
+- Real-time statistics
 
-## Customization
+## REST Sync
 
-You can modify `app.js` to experiment with different features:
+Demonstrates the Sync Adapter API:
 
-- Try relationships (hasOne, hasMany, belongsTo)
-- Test callbacks (beforeCreate, afterUpdate, etc.)
-- Experiment with query chaining
-- Add validation rules
+- **Push**: Send local tasks to a remote REST API
+- **Pull**: Fetch remote tasks into local IndexedDB
+- **Conflict Resolution**: `LAST_WRITE_WINS` strategy demo
+- **Mock Server**: In-memory REST API with no backend required
+
+Open DevTools > Network to inspect HTTP requests.
