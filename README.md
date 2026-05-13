@@ -17,6 +17,7 @@ IDB ActiveRecord provides a clean, intuitive interface for working with IndexedD
 - **Transactions**: Automatic transaction management with beginTransaction for manual control
 - **Callbacks**: beforeCreate, afterCreate, beforeUpdate, afterUpdate, beforeDestroy, afterDestroy
 - **Validation**: Built-in validation rules for presence, length, and format
+- **Sync Adapters**: Pluggable sync with REST APIs and cloud databases (Turso, Supabase planned)
 - **Lightweight**: Zero dependencies, small bundle size
 - **Browser Support**: Works in all modern browsers with IndexedDB support
 
@@ -363,6 +364,49 @@ Object.assign(user, { name: '' });
 const valid = await user.isValid();
 if (!valid) {
   console.log(user.errors);
+}
+```
+
+## Sync Adapter (Experimental)
+
+Sync local IndexedDB data with remote databases using pluggable adapters.
+
+```typescript
+import { RestAdapter, BaseAdapter, ConflictStrategy } from 'idb-activerecord';
+
+const adapter = new RestAdapter();
+await adapter.connect({
+  url: 'https://api.example.com',
+  authToken: 'Bearer xyz'
+});
+
+// Pull remote changes
+const remoteUsers = await adapter.pull({ table: 'users', since: lastSync });
+
+// Push local changes
+const result = await adapter.push([user1, user2]);
+
+// Resolve conflicts
+const winner = await adapter.resolveConflict(localUser, remoteUser, ConflictStrategy.LAST_WRITE_WINS);
+```
+
+### Built-in Adapters
+
+| Adapter | Description | Status |
+|---------|-------------|--------|
+| `RestAdapter` | Generic REST API sync | ✅ Ready |
+| `TursoAdapter` | Turso (SQLite edge) | 🚧 Planned |
+| `SupabaseAdapter` | Supabase (PostgreSQL) | 🚧 Coming Soon |
+
+Create custom adapters by extending `BaseAdapter`:
+
+```typescript
+class MyAdapter extends BaseAdapter {
+  async connect(config) { /* ... */ }
+  async pull(query) { /* ... */ }
+  async push(records) { /* ... */ }
+  async getRemoteSchema(table) { /* ... */ }
+  async applyMigration(migration) { /* ... */ }
 }
 ```
 

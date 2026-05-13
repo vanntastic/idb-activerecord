@@ -25,6 +25,9 @@ src/                    # Source files (TypeScript)
   query-builder.ts      # Chainable query builder
   migration.ts          # Migration and TableBuilder classes
   types.ts              # Shared TypeScript interfaces (ModelConfig, ValidationRule)
+  sync-adapter.ts       # SyncAdapter interface, BaseAdapter, conflict resolution
+  adapters/
+    rest-adapter.ts     # Generic REST API sync adapter
 
 tests/                  # Unit tests
   activerecord.test.ts  # Validation, callbacks
@@ -33,6 +36,7 @@ tests/                  # Unit tests
   relationships.test.ts # hasOne, hasMany, belongsTo
   migration.test.ts     # TableBuilder
   transactions.test.ts  # beginTransaction
+  sync-adapter.test.ts  # BaseAdapter, RestAdapter, conflict resolution
   mocks/
     indexeddb.ts        # Mock IDBDatabase/IDBTransaction for tests
 
@@ -129,7 +133,7 @@ BREAKING CHANGE: where(field, value) now requires explicit operator as second ar
 2. Export it from `src/index.ts` if it's part of the public API
 3. Add unit tests in `tests/`
 4. Update `README.md` if the public API changes
-5. Run `npm test -- --run` to confirm all 39+ tests pass
+5. Run `npm test -- --run` to confirm all 52+ tests pass
 6. Run `npm run build` to confirm the build succeeds
 
 ## Publishing
