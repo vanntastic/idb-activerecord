@@ -136,6 +136,37 @@ describe('RestAdapter', () => {
     expect(adapter.state.status).toBe(SyncStatus.IDLE);
     expect(adapter.state.lastSyncAt).toBeNull();
   });
+
+  it('should use options.table when pushing plain objects (no ActiveRecord class)', async () => {
+    const adapter = new RestAdapter();
+    await adapter.connect({ url: 'http://localhost:3000' });
+
+    const plainRecords = [
+      { id: 1, title: 'Task A', _version: 1 },
+      { id: 2, title: 'Task B', _version: 2 }
+    ] as unknown as ActiveRecord[];
+
+    let capturedUrl = '';
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = async (url: RequestInfo | URL) => {
+      capturedUrl = url.toString();
+      return new Response(JSON.stringify({ pushed: 2, errors: [] }), { status: 200 });
+    };
+
+    await adapter.push(plainRecords, { table: 'tasks' });
+    globalThis.fetch = origFetch;
+
+    expect(capturedUrl).toContain('/tasks');
+  });
+
+  it('should throw when pushing plain objects without options.table', async () => {
+    const adapter = new RestAdapter();
+    await adapter.connect({ url: 'http://localhost:3000' });
+
+    const plainRecords = [{ id: 1, title: 'No class' }] as unknown as ActiveRecord[];
+
+    await expect(adapter.push(plainRecords)).rejects.toThrow('Cannot push records without tableName');
+  });
 });
 
 // --- Test SyncMigration type ---
