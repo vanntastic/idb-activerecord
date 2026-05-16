@@ -30,11 +30,11 @@ Showcases all major library features:
 
 ## REST Sync
 
-Demonstrates the Sync Adapter API:
+Demonstrates the Sync Adapter API with a real Node.js REST API backed by SQLite.
 
-- **Push**: Send local tasks to a remote REST API
+- **Push**: Send local tasks to a remote REST API (upserted in SQLite)
 - **Pull**: Fetch remote tasks into local IndexedDB
 - **Conflict Resolution**: `LAST_WRITE_WINS` strategy demo
-- **Mock Server**: In-memory REST API with no backend required
+- **Real Persistence**: Tasks survive across browser refreshes and server restarts
 
-Open DevTools > Network to inspect HTTP requests.
+`npm run example` automatically starts both the static file server and the SQLite-backed REST API. Then open `/examples/rest-sync/`. See [`rest-sync/README.md`](./rest-sync/README.md) for details.

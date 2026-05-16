@@ -17,96 +17,9 @@ class Task extends ActiveRecord {
   };
 }
 
-// --- Mock REST API (in-memory for demo) ---
-
-const mockServer = {
-  tasks: [],
-  nextId: 1,
-
-  handle(req) {
-    const url = new URL(req.url, 'http://localhost');
-    const path = url.pathname;
-    const method = req.method;
-
-    // CORS preflight
-    if (method === 'OPTIONS') {
-      return new Response(null, { status: 204 });
-    }
-
-    // Health check
-    if (path === '/health') {
-      return Response.json({ status: 'ok' });
-    }
-
-    // Schema
-    if (path.startsWith('/schema/')) {
-      return Response.json({
-        name: 'tasks',
-        columns: [
-          { name: 'id', type: 'integer', nullable: false },
-          { name: 'title', type: 'string', nullable: false },
-          { name: 'status', type: 'string', nullable: true },
-          { name: 'updatedAt', type: 'datetime', nullable: true }
-        ],
-        indexes: []
-      });
-    }
-
-    // Migrations
-    if (path === '/migrations') {
-      return Response.json({ applied: true });
-    }
-
-    // Tasks endpoint
-    if (path === '/tasks') {
-      if (method === 'GET') {
-        let results = [...this.tasks];
-        const since = url.searchParams.get('since');
-        if (since) {
-          const sinceDate = new Date(since);
-          results = results.filter(t => new Date(t.updatedAt) > sinceDate);
-        }
-        return Response.json(results);
-      }
-
-      if (method === 'POST') {
-        return req.json().then(body => {
-          const records = Array.isArray(body) ? body : [body];
-          for (const rec of records) {
-            if (rec.id) {
-              // Update existing
-              const idx = this.tasks.findIndex(t => t.id === rec.id);
-              if (idx >= 0) {
-                this.tasks[idx] = { ...rec, updatedAt: new Date().toISOString() };
-              } else {
-                this.tasks.push({ ...rec, updatedAt: new Date().toISOString() });
-              }
-            } else {
-              // Create new
-              rec.id = this.nextId++;
-              rec.updatedAt = new Date().toISOString();
-              this.tasks.push(rec);
-            }
-          }
-          return Response.json({ pushed: records.length });
-        });
-      }
-    }
-
-    return new Response('Not Found', { status: 404 });
-  }
-};
-
-// Override fetch to route through mock server
-const originalFetch = window.fetch;
-window.fetch = function(url, init) {
-  if (String(url).startsWith('http://mock-api')) {
-    return mockServer.handle({ url: String(url), method: init?.method || 'GET', json: () => Promise.resolve(init?.body ? JSON.parse(init.body) : {}) });
-  }
-  return originalFetch(url, init);
-};
-
 // --- Setup ---
+
+const API_URL = 'http://localhost:3001';
 
 const db = new Database('sync-demo', 1);
 db.registerModel(Task);
@@ -117,10 +30,17 @@ const adapter = new RestAdapter();
 
 async function init() {
   await db.connect();
-  await adapter.connect({
-    url: 'http://mock-api',
-    endpointPattern: '/{table}'
-  });
+
+  try {
+    await adapter.connect({
+      url: API_URL,
+      endpointPattern: '/{table}'
+    });
+  } catch (err) {
+    document.getElementById('lastAction').textContent =
+      `⚠️ Could not connect to ${API_URL}. Run: npm run example:sync-api`;
+    console.error(err);
+  }
 
   renderStatus();
   renderTasks();
@@ -215,12 +135,22 @@ async function resolveDemo() {
     `Conflict resolved: "${winner.title}" wins (strategy: lastWriteWins)`;
 }
 
-function renderStatus() {
+async function renderStatus() {
   document.getElementById('connStatus').textContent = adapter.isConnected() ? 'Connected' : 'Disconnected';
   document.getElementById('connStatus').className = adapter.isConnected() ? 'status-ok' : 'status-err';
   document.getElementById('lastSync').textContent = adapter.state.lastPushAt?.toLocaleTimeString() || 'Never';
   document.getElementById('pendingOps').textContent = String(adapter.state.pendingOperations);
-  document.getElementById('remoteCount').textContent = String(mockServer.tasks.length);
+
+  if (adapter.isConnected()) {
+    try {
+      const remote = await adapter.pull({ table: 'tasks' });
+      document.getElementById('remoteCount').textContent = String(remote.length);
+    } catch {
+      document.getElementById('remoteCount').textContent = '?';
+    }
+  } else {
+    document.getElementById('remoteCount').textContent = '—';
+  }
 }
 
 function escapeHtml(text) {
