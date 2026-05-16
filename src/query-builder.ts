@@ -41,6 +41,9 @@ export class QueryBuilder<T> {
       request.onsuccess = () => {
         let results = request.result;
 
+        // Filter out soft-deleted records (check _deletedAt field on raw data)
+        results = results.filter((item: any) => !item._deletedAt);
+
         // Apply conditions
         results = results.filter((item: any) => {
           return this.conditions.every(condition => {

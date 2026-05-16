@@ -410,6 +410,49 @@ class MyAdapter extends BaseAdapter {
 }
 ```
 
+## Multi-User Sync with SyncEngine
+
+For real multi-user / multi-device scenarios, `SyncEngine` orchestrates change tracking, soft deletes, and version-based conflict resolution automatically.
+
+```typescript
+import { Database, ActiveRecord, RestAdapter, SyncEngine, ConflictStrategy } from 'idb-activerecord';
+
+class Task extends ActiveRecord {
+  static tableName = 'tasks';
+  static enableSync = true;   // auto-tracks updatedAt + _version + change log
+  static softDelete = true;   // destroy() sets _deletedAt instead of removing
+}
+
+const db = new Database('my-app', 1);
+db.registerModel(Task);
+await db.connect();
+
+const adapter = new RestAdapter();
+await adapter.connect({ url: 'https://api.example.com' });
+
+const engine = new SyncEngine();
+engine.setDatabase(db.getDB());
+
+// Bidirectional sync: push pending changes → pull remote → merge with conflict resolution
+const result = await engine.sync('tasks', adapter, {
+  strategy: ConflictStrategy.LAST_WRITE_WINS,
+  onProgress: (msg) => console.log(msg)
+});
+
+console.log(`Pushed ${result.pushed}, pulled ${result.pulled}, conflicts ${result.conflicts}`);
+```
+
+### How it works
+
+- **Change tracking** — every `create`/`update`/`destroy` on a sync-enabled model writes to an internal `__sync_changes` store
+- **Version stamps** — each record gets `_version` and `updatedAt` fields, incremented automatically
+- **Soft deletes** — `destroy()` sets `_deletedAt` so deletions can propagate to other devices (tombstones)
+- **Cursor tracking** — `__sync_meta` persists `lastPullAt` so pulls only fetch changes since last sync
+- **Merge with version compare** — newer `_version` wins; ties fall back to `updatedAt`
+- **Soft-deleted records** are automatically filtered from `Model.all()` and `where()` queries — use `Model.withDeleted()` or `Model.onlyDeleted()` to access them. `Model.restore(id)` undoes a soft delete.
+
+See [`examples/rest-sync`](./examples/rest-sync) for a runnable multi-user demo with a SQLite backend.
+
 ## Browser Support
 
 - Chrome 24+

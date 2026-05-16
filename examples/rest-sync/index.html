@@ -62,7 +62,10 @@
     }
     .task-item.done { opacity: 0.5; }
     .task-item.done .task-title { text-decoration: line-through; }
+    .task-item.deleted { opacity: 0.4; }
+    .task-item.deleted .task-title { text-decoration: line-through; color: #64748b; }
     .task-title { flex: 1; font-weight: 500; }
+    .task-meta { font-size: 0.7rem; color: #64748b; }
     .task-status {
       font-size: 0.75rem;
       padding: 0.2rem 0.6rem;
@@ -71,11 +74,29 @@
       text-transform: uppercase;
     }
     .task-item.done .task-status { background: #22c55e; color: white; }
+    .task-item.deleted .task-status { background: #ef4444; color: white; }
     .toggle-btn { background: #334155; color: #e2e8f0; }
     .delete-btn { background: transparent; color: #ef4444; border: 1px solid #ef4444; }
+    .user-switcher {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+    }
+    .user-btn {
+      padding: 0.4rem 1rem;
+      border-radius: 6px;
+      background: #334155;
+      color: #e2e8f0;
+      border: 2px solid transparent;
+      cursor: pointer;
+    }
+    .user-btn.active {
+      border-color: #38bdf8;
+      background: #1e293b;
+    }
     .status-bar {
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
+      grid-template-columns: repeat(5, 1fr);
       gap: 1rem;
     }
     .stat {
@@ -102,20 +123,31 @@
 <body>
   <h1>IDB ActiveRecord — REST Sync Demo</h1>
   <p class="subtitle">
-    Local IndexedDB tasks synced with a mock REST API backend.
-    Open DevTools &gt; Network to see the HTTP requests.
+    Local IndexedDB tasks synced with a real SQLite-backed REST API.
+    Switch between users to simulate multi-device sync. Open DevTools &gt; Network.
   </p>
 
   <div class="panel">
-    <h2>Connection Status</h2>
+    <h2>Current User: <span id="userBadge">—</span></h2>
+    <div class="user-switcher">
+      <button class="user-btn active" id="btn-alice" onclick="switchUser('alice')">Alice</button>
+      <button class="user-btn" id="btn-bob" onclick="switchUser('bob')">Bob</button>
+    </div>
+    <p style="color:#94a3b8; font-size:0.85rem;">
+      Each user has their own dataset on the server. Switch users to simulate a different device/browser.
+    </p>
+  </div>
+
+  <div class="panel">
+    <h2>Sync Status</h2>
     <div class="status-bar">
       <div class="stat">
         <div class="stat-value" id="connStatus">—</div>
         <div class="stat-label">Adapter</div>
       </div>
       <div class="stat">
-        <div class="stat-value" id="lastSync">—</div>
-        <div class="stat-label">Last Push</div>
+        <div class="stat-value" id="localCount">0</div>
+        <div class="stat-label">Local Tasks</div>
       </div>
       <div class="stat">
         <div class="stat-value" id="pendingOps">0</div>
@@ -124,6 +156,10 @@
       <div class="stat">
         <div class="stat-value" id="remoteCount">0</div>
         <div class="stat-label">Remote Tasks</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value" id="lastSync">—</div>
+        <div class="stat-label">Last Sync</div>
       </div>
     </div>
   </div>
@@ -141,9 +177,8 @@
 
   <div class="panel">
     <h2>Sync Operations</h2>
-    <button class="btn-success" onclick="syncPush()">Push to Remote</button>
-    <button class="btn-warning" onclick="syncPull()">Pull from Remote</button>
-    <button class="btn-danger" onclick="resolveDemo()">Demo Conflict Resolution</button>
+    <button class="btn-success" onclick="doSync()">🔄 Full Sync (Push + Pull + Merge)</button>
+    <button class="btn-danger" onclick="clearLocal()">🗑 Clear Local</button>
     <div class="action-log" id="lastAction">No action yet</div>
   </div>
 

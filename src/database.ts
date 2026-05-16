@@ -53,6 +53,19 @@ export class Database {
         }
       }
     });
+
+    // Create internal sync stores
+    if (!db.objectStoreNames.contains('__sync_meta')) {
+      db.createObjectStore('__sync_meta', { keyPath: 'table' });
+    }
+    if (!db.objectStoreNames.contains('__sync_changes')) {
+      const changeStore = db.createObjectStore('__sync_changes', {
+        keyPath: 'id',
+        autoIncrement: true
+      });
+      changeStore.createIndex('table', 'table', { unique: false });
+      changeStore.createIndex('synced', 'synced', { unique: false });
+    }
   }
 
   async close(): Promise<void> {

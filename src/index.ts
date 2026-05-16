@@ -26,6 +26,10 @@ export type {
   SyncState
 } from './sync-adapter.js';
 
+// Sync Engine
+export { SyncEngine } from './sync-engine.js';
+export type { SyncMeta, SyncChange, SyncOptions } from './sync-engine.js';
+
 // Built-in Adapters
 export { RestAdapter } from './adapters/rest-adapter.js';
 export type { RestAdapterConfig } from './adapters/rest-adapter.js';

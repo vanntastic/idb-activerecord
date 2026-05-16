@@ -1,12 +1,14 @@
-// REST Sync Adapter Example
-// Demonstrates syncing local IndexedDB with a remote REST API
+// REST Sync Adapter Example — Multi-User Demo
+// Demonstrates SyncEngine with change tracking, soft deletes, and conflict resolution.
 
-import { Database, ActiveRecord, RestAdapter, ConflictStrategy } from '../../dist/index.js';
+import { Database, ActiveRecord, RestAdapter, ConflictStrategy, SyncEngine } from '../../dist/index.js';
 
 // --- Models ---
 
 class Task extends ActiveRecord {
   static tableName = 'tasks';
+  static enableSync = true;
+  static softDelete = true;
 
   static indexes = [
     { name: 'status_index', keyPath: 'status' }
@@ -20,16 +22,20 @@ class Task extends ActiveRecord {
 // --- Setup ---
 
 const API_URL = 'http://localhost:3001';
+let currentUser = 'alice';
 
-const db = new Database('sync-demo', 1);
+// Bump to version 2 so sync stores are created
+const db = new Database('sync-demo', 2);
 db.registerModel(Task);
 
 const adapter = new RestAdapter();
+const engine = new SyncEngine();
 
 // --- UI Logic ---
 
 async function init() {
   await db.connect();
+  engine.setDatabase(db.getDB());
 
   try {
     await adapter.connect({
@@ -37,8 +43,7 @@ async function init() {
       endpointPattern: '/{table}'
     });
   } catch (err) {
-    document.getElementById('lastAction').textContent =
-      `⚠️ Could not connect to ${API_URL}. Run: npm run example:sync-api`;
+    logAction(`⚠️ Could not connect to ${API_URL}. Run: npm run example:sync-api`);
     console.error(err);
   }
 
@@ -46,13 +51,20 @@ async function init() {
   renderTasks();
 }
 
+function logAction(msg) {
+  const el = document.getElementById('lastAction');
+  el.textContent = msg;
+  console.log('[sync]', msg);
+}
+
 async function addTask() {
   const title = document.getElementById('taskTitle').value.trim();
   if (!title) return alert('Enter a task title');
 
-  await Task.create({ title, status: 'pending' });
+  await Task.create({ title, status: 'pending', owner_id: currentUser });
   document.getElementById('taskTitle').value = '';
-  renderTasks();
+  await renderTasks();
+  await renderStatus();
 }
 
 async function toggleTask(id) {
@@ -62,7 +74,8 @@ async function toggleTask(id) {
 
   const newStatus = task.status === 'done' ? 'pending' : 'done';
   await task.update({ status: newStatus });
-  renderTasks();
+  await renderTasks();
+  await renderStatus();
 }
 
 async function deleteTask(id) {
@@ -70,16 +83,24 @@ async function deleteTask(id) {
   const task = tasks.find(t => t.id === id);
   if (task) {
     await task.destroy();
-    renderTasks();
+    await renderTasks();
+    await renderStatus();
   }
+}
+
+async function restoreTask(id) {
+  await Task.restore(id);
+  await renderTasks();
+  await renderStatus();
 }
 
 async function renderTasks() {
   const tasks = (await Task.all()).sort((a, b) => a.id - b.id);
+  const deleted = (await Task.onlyDeleted()).sort((a, b) => a.id - b.id);
   const list = document.getElementById('taskList');
   list.innerHTML = '';
 
-  if (tasks.length === 0) {
+  if (tasks.length === 0 && deleted.length === 0) {
     list.innerHTML = '<p style="color:#999">No tasks yet. Add one above!</p>';
     return;
   }
@@ -89,61 +110,72 @@ async function renderTasks() {
     li.className = `task-item ${task.status}`;
     li.innerHTML = `
       <span class="task-title">${escapeHtml(task.title)}</span>
+      <span class="task-meta">v${task._version || 1}</span>
       <span class="task-status">${task.status}</span>
       <button class="toggle-btn" onclick="toggleTask(${task.id})">${task.status === 'done' ? 'Undo' : 'Done'}</button>
       <button class="delete-btn" onclick="deleteTask(${task.id})">Delete</button>
     `;
     list.appendChild(li);
   });
-}
 
-async function syncPush() {
-  const tasks = await Task.all();
-  const result = await adapter.push(tasks);
-  document.getElementById('lastAction').textContent = `Pushed ${result.pushed} tasks`;
-  renderStatus();
-}
+  if (deleted.length > 0) {
+    const sep = document.createElement('div');
+    sep.style.cssText = 'color:#64748b; font-size:0.8rem; padding:0.5rem 0; margin-top:0.5rem; border-top:1px solid #334155;';
+    sep.textContent = `Deleted tasks (${deleted.length}) — not yet synced:`;
+    list.appendChild(sep);
 
-async function syncPull() {
-  const remote = await adapter.pull({ table: 'tasks' });
-  document.getElementById('lastAction').textContent = `Pulled ${remote.length} tasks from remote`;
-
-  // Merge: update local with remote (simple replace for demo)
-  const localTasks = await Task.all();
-  for (const lt of localTasks) {
-    await lt.destroy();
+    deleted.forEach(task => {
+      const li = document.createElement('div');
+      li.className = 'task-item deleted';
+      li.innerHTML = `
+        <span class="task-title">${escapeHtml(task.title)}</span>
+        <span class="task-meta">v${task._version || 1}</span>
+        <span class="task-status">deleted</span>
+        <button class="toggle-btn" onclick="restoreTask(${task.id})">Restore</button>
+      `;
+      list.appendChild(li);
+    });
   }
-  for (const rt of remote) {
-    await Task.create(rt);
-  }
-
-  renderTasks();
-  renderStatus();
 }
 
-async function resolveDemo() {
-  const local = { id: 1, title: 'Local Task', status: 'pending', updatedAt: new Date('2024-01-01').toISOString() };
-  const remote = { id: 1, title: 'Remote Task', status: 'done', updatedAt: new Date('2024-02-01').toISOString() };
+async function doSync() {
+  if (!adapter.isConnected()) {
+    logAction('⚠️ Adapter not connected');
+    return;
+  }
 
-  const winner = await adapter.resolveConflict(
-    local,
-    remote,
-    ConflictStrategy.LAST_WRITE_WINS
-  );
+  logAction('Sync started...');
 
-  document.getElementById('lastAction').textContent =
-    `Conflict resolved: "${winner.title}" wins (strategy: lastWriteWins)`;
+  try {
+    const result = await engine.sync('tasks', adapter, {
+      strategy: ConflictStrategy.LAST_WRITE_WINS,
+      onProgress: (msg) => { logAction(msg); }
+    });
+
+    logAction(
+      `✅ Sync complete — pushed ${result.pushed}, pulled ${result.pulled}, ` +
+      `conflicts ${result.conflicts}, errors ${result.errors.length}`
+    );
+
+    await renderTasks();
+    await renderStatus();
+  } catch (err) {
+    logAction(`❌ Sync failed: ${err.message}`);
+    console.error(err);
+  }
 }
 
 async function renderStatus() {
-  document.getElementById('connStatus').textContent = adapter.isConnected() ? 'Connected' : 'Disconnected';
-  document.getElementById('connStatus').className = adapter.isConnected() ? 'status-ok' : 'status-err';
-  document.getElementById('lastSync').textContent = adapter.state.lastPushAt?.toLocaleTimeString() || 'Never';
-  document.getElementById('pendingOps').textContent = String(adapter.state.pendingOperations);
+  const connected = adapter.isConnected();
+  document.getElementById('connStatus').textContent = connected ? 'Connected' : 'Disconnected';
+  document.getElementById('connStatus').className = connected ? 'status-ok' : 'status-err';
 
-  if (adapter.isConnected()) {
+  const pending = connected ? await engine.getPendingCount('tasks') : 0;
+  document.getElementById('pendingOps').textContent = String(pending);
+
+  if (connected) {
     try {
-      const remote = await adapter.pull({ table: 'tasks' });
+      const remote = await adapter.pull({ table: 'tasks', where: { owner_id: currentUser } });
       document.getElementById('remoteCount').textContent = String(remote.length);
     } catch {
       document.getElementById('remoteCount').textContent = '?';
@@ -151,6 +183,40 @@ async function renderStatus() {
   } else {
     document.getElementById('remoteCount').textContent = '—';
   }
+
+  const local = (await Task.all()).length;
+  document.getElementById('localCount').textContent = String(local);
+
+  document.getElementById('userBadge').textContent = currentUser;
+}
+
+function switchUser(name) {
+  currentUser = name;
+  document.getElementById('btn-alice').className = name === 'alice' ? 'user-btn active' : 'user-btn';
+  document.getElementById('btn-bob').className = name === 'bob' ? 'user-btn active' : 'user-btn';
+  logAction(`Switched to user: ${name}`);
+  renderStatus();
+  renderTasks();
+}
+
+async function clearLocal() {
+  if (!confirm('Clear all local tasks? This cannot be undone.')) return;
+
+  // Hard delete everything from IndexedDB
+  const idb = db.getDB();
+  const tx = idb.transaction(['tasks', '__sync_changes', '__sync_meta'], 'readwrite');
+  tx.objectStore('tasks').clear();
+  tx.objectStore('__sync_changes').clear();
+  tx.objectStore('__sync_meta').clear();
+
+  await new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve(undefined);
+    tx.onerror = () => reject(tx.error);
+  });
+
+  logAction('Local database cleared');
+  await renderTasks();
+  await renderStatus();
 }
 
 function escapeHtml(text) {
@@ -163,8 +229,9 @@ function escapeHtml(text) {
 window.addTask = addTask;
 window.toggleTask = toggleTask;
 window.deleteTask = deleteTask;
-window.syncPush = syncPush;
-window.syncPull = syncPull;
-window.resolveDemo = resolveDemo;
+window.restoreTask = restoreTask;
+window.doSync = doSync;
+window.switchUser = switchUser;
+window.clearLocal = clearLocal;
 
 init();

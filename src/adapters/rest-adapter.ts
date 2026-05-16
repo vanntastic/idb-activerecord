@@ -207,6 +207,7 @@ export class RestAdapter extends BaseAdapter {
 
       this.updateState({
         lastPushAt: new Date(),
+        pendingOperations: 0,
         status: SyncStatus.IDLE
       });
 
