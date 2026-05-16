@@ -29,6 +29,7 @@ export interface SyncQuery {
  * Options for pushing data to remote
  */
 export interface PushOptions {
+  table?: string;
   batchSize?: number;
   onConflict?: ConflictStrategy;
   skipConflicts?: boolean;

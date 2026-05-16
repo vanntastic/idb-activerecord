@@ -242,7 +242,7 @@ export class SyncEngine {
     }
 
     const payload = Array.from(latestById.values()).map(c => c.data);
-    const pushResult = await adapter.push(payload);
+    const pushResult = await adapter.push(payload, { table });
 
     result.pushed = pushResult.pushed;
     result.errors = pushResult.errors;

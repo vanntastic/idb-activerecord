@@ -174,7 +174,8 @@ export class RestAdapter extends BaseAdapter {
         const batch = records.slice(i, i + batchSize);
         const record = batch[0]!;
         const RecordClass = record.constructor as typeof ActiveRecord;
-        const table = (RecordClass as unknown as { tableName: string }).tableName;
+        const table = options.table ||
+          (RecordClass as unknown as { tableName?: string }).tableName;
 
         if (!table) {
           throw new Error('Cannot push records without tableName');
