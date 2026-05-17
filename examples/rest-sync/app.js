@@ -68,7 +68,7 @@ async function addTask() {
 }
 
 async function toggleTask(id) {
-  const tasks = await Task.all();
+  const tasks = await Task.where('owner_id', '=', currentUser).all();
   const task = tasks.find(t => t.id === id);
   if (!task) return;
 
@@ -79,7 +79,7 @@ async function toggleTask(id) {
 }
 
 async function deleteTask(id) {
-  const tasks = await Task.all();
+  const tasks = await Task.where('owner_id', '=', currentUser).all();
   const task = tasks.find(t => t.id === id);
   if (task) {
     await task.destroy();
@@ -89,14 +89,16 @@ async function deleteTask(id) {
 }
 
 async function restoreTask(id) {
+  const deleted = (await Task.onlyDeleted()).filter(t => t.owner_id === currentUser);
+  if (!deleted.find(t => t.id === id)) return;
   await Task.restore(id);
   await renderTasks();
   await renderStatus();
 }
 
 async function renderTasks() {
-  const tasks = (await Task.all()).sort((a, b) => a.id - b.id);
-  const deleted = (await Task.onlyDeleted()).sort((a, b) => a.id - b.id);
+  const tasks = (await Task.where('owner_id', '=', currentUser).all()).sort((a, b) => a.id - b.id);
+  const deleted = (await Task.onlyDeleted()).filter(t => t.owner_id === currentUser).sort((a, b) => a.id - b.id);
   const list = document.getElementById('taskList');
   list.innerHTML = '';
 
@@ -184,7 +186,7 @@ async function renderStatus() {
     document.getElementById('remoteCount').textContent = '—';
   }
 
-  const local = (await Task.all()).length;
+  const local = (await Task.where('owner_id', '=', currentUser).all()).length;
   document.getElementById('localCount').textContent = String(local);
 
   document.getElementById('userBadge').textContent = currentUser;
