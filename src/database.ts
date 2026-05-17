@@ -1,14 +1,45 @@
 // Database class for managing IndexedDB connection and models
 
+import { SyncEngine, SyncOptions } from './sync-engine.js';
+import { SyncAdapter, SyncResult } from './sync-adapter.js';
+
 export class Database {
   private db: IDBDatabase | null = null;
   private models: Map<string, any> = new Map();
+  private engine: SyncEngine | null = null;
 
-  constructor(private name: string, private version: number) {}
+  constructor(private name: string, private version?: number) {}
+
+  private resolveVersion(): Promise<number> {
+    return new Promise((resolve, reject) => {
+      const probe = indexedDB.open(this.name);
+      probe.onerror = () => reject(probe.error);
+      probe.onsuccess = () => {
+        const current = probe.result.version;
+        probe.result.close();
+        const needed = this.needsUpgrade(probe.result);
+        resolve(needed ? current + 1 : current);
+      };
+      probe.onupgradeneeded = (event) => {
+        (event.target as IDBOpenDBRequest).result.close();
+        resolve(1);
+      };
+    });
+  }
+
+  private needsUpgrade(db: IDBDatabase): boolean {
+    for (const [tableName] of this.models) {
+      if (!db.objectStoreNames.contains(tableName)) return true;
+    }
+    if (!db.objectStoreNames.contains('__sync_meta')) return true;
+    if (!db.objectStoreNames.contains('__sync_changes')) return true;
+    return false;
+  }
 
   async connect(): Promise<void> {
+    const version = this.version ?? await this.resolveVersion();
     return new Promise((resolve, reject) => {
-      const request = indexedDB.open(this.name, this.version);
+      const request = indexedDB.open(this.name, version);
 
       request.onerror = () => reject(request.error);
       request.onsuccess = () => {
@@ -86,5 +117,18 @@ export class Database {
       throw new Error('Database not connected. Call connect() first.');
     }
     return this.db;
+  }
+
+  getSyncEngine(): SyncEngine {
+    if (!this.db) throw new Error('Database not connected. Call connect() first.');
+    if (!this.engine) {
+      this.engine = new SyncEngine();
+      this.engine.setDatabase(this.db);
+    }
+    return this.engine;
+  }
+
+  async sync(table: string, adapter: SyncAdapter, options?: SyncOptions): Promise<SyncResult> {
+    return this.getSyncEngine().sync(table, adapter, options);
   }
 }

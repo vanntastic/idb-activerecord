@@ -68,7 +68,7 @@ class User extends ActiveRecord<User> {
 }
 
 // Initialize the database
-const db = new Database('my-app', 1);
+const db = new Database('my-app');
 db.registerModel(User);
 await db.connect();
 
@@ -114,7 +114,7 @@ View this example in [CodeSandbox](https://codesandbox.io/p/sandbox/cqjngw)
       static tableName = 'users';
     }
 
-    const db = new Database('my-app', 1);
+    const db = new Database('my-app');
     db.registerModel(User);
 
     async function renderUsers() {
@@ -154,7 +154,7 @@ View this example in [CodeSandbox](https://codesandbox.io/p/sandbox/cqjngw)
 ```typescript
 import { Database } from 'idb-activerecord';
 
-const db = new Database(name: string, version: number);
+const db = new Database(name: string, version?: number);
 await db.connect();
 db.registerModel(ModelClass);
 await db.close();
@@ -410,31 +410,32 @@ class MyAdapter extends BaseAdapter {
 }
 ```
 
-## Multi-User Sync with SyncEngine
+## Multi-User Sync
 
-For real multi-user / multi-device scenarios, `SyncEngine` orchestrates change tracking, soft deletes, and version-based conflict resolution automatically.
+For multi-user / multi-device scenarios, `idb-activerecord` handles change tracking, soft deletes, and version-based conflict resolution automatically.
+
+### Basic usage
+
+Enable sync on your model, connect an adapter, call `db.sync()`:
 
 ```typescript
-import { Database, ActiveRecord, RestAdapter, SyncEngine, ConflictStrategy } from 'idb-activerecord';
+import { Database, ActiveRecord, RestAdapter, ConflictStrategy } from 'idb-activerecord';
 
 class Task extends ActiveRecord {
   static tableName = 'tasks';
-  static enableSync = true;   // auto-tracks updatedAt + _version + change log
-  static softDelete = true;   // destroy() sets _deletedAt instead of removing
+  static enableSync = true;  // auto-tracks updatedAt, _version, change log
+  static softDelete = true;  // destroy() sets _deletedAt instead of removing the row
 }
 
-const db = new Database('my-app', 1);
+const db = new Database('my-app');  // version auto-managed
 db.registerModel(Task);
 await db.connect();
 
 const adapter = new RestAdapter();
 await adapter.connect({ url: 'https://api.example.com' });
 
-const engine = new SyncEngine();
-engine.setDatabase(db.getDB());
-
-// Bidirectional sync: push pending changes → pull remote → merge with conflict resolution
-const result = await engine.sync('tasks', adapter, {
+// Bidirectional sync: push pending changes → pull remote → merge
+const result = await db.sync('tasks', adapter, {
   strategy: ConflictStrategy.LAST_WRITE_WINS,
   onProgress: (msg) => console.log(msg)
 });
@@ -442,14 +443,49 @@ const result = await engine.sync('tasks', adapter, {
 console.log(`Pushed ${result.pushed}, pulled ${result.pulled}, conflicts ${result.conflicts}`);
 ```
 
+### Soft-deleted records
+
+```typescript
+const active  = await Task.all();           // excludes deleted records
+const deleted = await Task.onlyDeleted();   // only deleted records
+const all     = await Task.withDeleted();   // everything
+
+await Task.restore(id);                     // undo a soft delete
+```
+
+### Advanced usage — direct SyncEngine access
+
+`db.sync()` is a convenience wrapper. For lower-level control — inspecting the change log, resetting sync cursors, or composing custom sync flows — access the engine directly:
+
+```typescript
+import { SyncEngine } from 'idb-activerecord';
+
+// db.getSyncEngine() returns the shared engine wired to the database
+const engine = db.getSyncEngine();
+
+// Or create and wire your own
+const engine = new SyncEngine();
+engine.setDatabase(db.getDB());
+
+// Inspect pending changes before pushing
+const count = await engine.getPendingCount('tasks');
+
+// Push and pull as separate steps
+await engine.pushChanges('tasks', adapter);
+const remote = await engine.pullChanges('tasks', adapter);
+await engine.mergeChanges('tasks', remote, adapter, { strategy: ConflictStrategy.LOCAL_WINS });
+
+// Reset sync state for a table (forces full re-pull on next sync)
+await engine.clearSyncData('tasks');
+```
+
 ### How it works
 
-- **Change tracking** — every `create`/`update`/`destroy` on a sync-enabled model writes to an internal `__sync_changes` store
-- **Version stamps** — each record gets `_version` and `updatedAt` fields, incremented automatically
-- **Soft deletes** — `destroy()` sets `_deletedAt` so deletions can propagate to other devices (tombstones)
-- **Cursor tracking** — `__sync_meta` persists `lastPullAt` so pulls only fetch changes since last sync
-- **Merge with version compare** — newer `_version` wins; ties fall back to `updatedAt`
-- **Soft-deleted records** are automatically filtered from `Model.all()` and `where()` queries — use `Model.withDeleted()` or `Model.onlyDeleted()` to access them. `Model.restore(id)` undoes a soft delete.
+- **Change tracking** — every `create`/`update`/`destroy` on a sync-enabled model appends to an internal `__sync_changes` store
+- **Version stamps** — each record gets `_version` (integer) and `updatedAt` fields, incremented on every write
+- **Soft deletes** — `destroy()` sets `_deletedAt` so deletions propagate as tombstones to other devices
+- **Cursor tracking** — `__sync_meta` persists `lastPullAt` per table so pulls only fetch what changed since last sync
+- **Conflict resolution** — newer `_version` wins; ties fall back to `updatedAt`; or use `ConflictStrategy.LOCAL_WINS` / `REMOTE_WINS` / `CUSTOM`
 
 See [`examples/rest-sync`](./examples/rest-sync) for a runnable multi-user demo with a SQLite backend.
 

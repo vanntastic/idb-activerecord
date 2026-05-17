@@ -1,7 +1,7 @@
 // REST Sync Adapter Example — Multi-User Demo
 // Demonstrates SyncEngine with change tracking, soft deletes, and conflict resolution.
 
-import { Database, ActiveRecord, RestAdapter, ConflictStrategy, SyncEngine } from '../../dist/index.js';
+import { Database, ActiveRecord, RestAdapter, ConflictStrategy } from '../../dist/index.js';
 
 // --- Models ---
 
@@ -24,18 +24,15 @@ class Task extends ActiveRecord {
 const API_URL = 'http://localhost:3001';
 let currentUser = 'alice';
 
-// Bump to version 2 so sync stores are created
-const db = new Database('sync-demo', 2);
+const db = new Database('sync-demo');
 db.registerModel(Task);
 
 const adapter = new RestAdapter();
-const engine = new SyncEngine();
 
 // --- UI Logic ---
 
 async function init() {
   await db.connect();
-  engine.setDatabase(db.getDB());
 
   try {
     await adapter.connect({
@@ -149,7 +146,7 @@ async function doSync() {
   logAction('Sync started...');
 
   try {
-    const result = await engine.sync('tasks', adapter, {
+    const result = await db.sync('tasks', adapter, {
       strategy: ConflictStrategy.LAST_WRITE_WINS,
       onProgress: (msg) => { logAction(msg); }
     });
@@ -172,7 +169,7 @@ async function renderStatus() {
   document.getElementById('connStatus').textContent = connected ? 'Connected' : 'Disconnected';
   document.getElementById('connStatus').className = connected ? 'status-ok' : 'status-err';
 
-  const pending = connected ? await engine.getPendingCount('tasks') : 0;
+  const pending = connected ? await db.getSyncEngine().getPendingCount('tasks') : 0;
   document.getElementById('pendingOps').textContent = String(pending);
 
   if (connected) {
