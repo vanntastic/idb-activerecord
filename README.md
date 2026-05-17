@@ -413,17 +413,50 @@ const winner = await adapter.resolveConflict(localUser, remoteUser, ConflictStra
 |---------|-------------|--------|
 | `RestAdapter` | Generic REST API sync | ✅ Ready |
 | `TursoAdapter` | Turso (SQLite edge) | 🚧 Planned |
-| `SupabaseAdapter` | Supabase (PostgreSQL) | 🚧 Coming Soon |
+| `SupabaseAdapter` | Supabase (PostgreSQL) | 🚧 TBD |
 
 Create custom adapters by extending `BaseAdapter`:
 
 ```typescript
+import {
+  BaseAdapter,
+  AdapterConfig,
+  SyncQuery,
+  PushOptions,
+  SyncResult,
+  TableSchema,
+  SyncMigration,
+  ActiveRecord
+} from 'idb-activerecord';
+
 class MyAdapter extends BaseAdapter {
-  async connect(config) { /* ... */ }
-  async pull(query) { /* ... */ }
-  async push(records) { /* ... */ }
-  async getRemoteSchema(table) { /* ... */ }
-  async applyMigration(migration) { /* ... */ }
+  async connect(config: AdapterConfig): Promise<void> {
+    this.config = config;
+    this.connected = true;
+  }
+
+  async disconnect(): Promise<void> {
+    this.connected = false;
+  }
+
+  async pull<T extends ActiveRecord>(query: SyncQuery): Promise<T[]> {
+    // fetch records from your backend since query.since
+    return [];
+  }
+
+  async push<T extends ActiveRecord>(records: T[], options?: PushOptions): Promise<SyncResult> {
+    // send records to your backend
+    return { pushed: records.length, pulled: 0, conflicts: 0, errors: [], timestamp: new Date() };
+  }
+
+  async getRemoteSchema(table: string): Promise<TableSchema> {
+    // return column/index definitions for the table
+    return { name: table, columns: [], indexes: [] };
+  }
+
+  async applyMigration(migration: SyncMigration): Promise<void> {
+    // send migration intent to your backend (optional)
+  }
 }
 ```
 
