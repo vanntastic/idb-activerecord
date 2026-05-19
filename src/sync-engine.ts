@@ -34,9 +34,18 @@ export interface SyncOptions {
 
 export class SyncEngine {
   private db: IDBDatabase | null = null;
+  private syncUser: string | null = null;
 
   setDatabase(db: IDBDatabase): void {
     this.db = db;
+  }
+
+  setUser(userId: string): void {
+    this.syncUser = userId;
+  }
+
+  getUser(): string | null {
+    return this.syncUser;
   }
 
   // ------------------------------------------------------------------
@@ -268,8 +277,14 @@ export class SyncEngine {
     const query: SyncQuery = {
       table,
       since: meta.lastPullAt ? new Date(meta.lastPullAt) : undefined,
-      limit: 1000
+      limit: 1000,
+      includeDeleted: true // sync must see tombstones to propagate deletions
     };
+
+    // Auto-filter by user if set
+    if (this.syncUser) {
+      query.where = { owner_id: this.syncUser };
+    }
 
     return adapter.pull(query);
   }

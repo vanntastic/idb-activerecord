@@ -7,7 +7,8 @@ export class QueryBuilder<T> {
 
   constructor(
     private tableName: string,
-    private db: IDBDatabase | null
+    private db: IDBDatabase | null,
+    private modelClass?: any
   ) {}
 
   where(field: string, operator: string, value?: any): QueryBuilder<T> {
@@ -82,6 +83,15 @@ export class QueryBuilder<T> {
         // Apply limit
         if (this.limitValue) {
           results = results.slice(0, this.limitValue);
+        }
+
+        // Hydrate plain objects into model instances if a model class is provided
+        if (this.modelClass) {
+          results = results.map((item: any) => {
+            const instance = Object.create(this.modelClass.prototype);
+            Object.assign(instance, item);
+            return instance;
+          });
         }
 
         resolve(results);

@@ -110,6 +110,10 @@ export class RestAdapter extends BaseAdapter {
         params.append('offset', query.offset.toString());
       }
 
+      if (query.includeDeleted) {
+        params.append('include_deleted', 'true');
+      }
+
       // Add where clauses as query params
       if (query.where) {
         Object.entries(query.where).forEach(([key, value]) => {

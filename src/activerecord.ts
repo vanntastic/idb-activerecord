@@ -138,7 +138,7 @@ export class ActiveRecord<_T = any> {
   }
 
   static where(field: string, operator: string, value?: any): QueryBuilder<any> {
-    return new QueryBuilder<any>(this.tableName, this.db).where(field, operator, value);
+    return new QueryBuilder<any>(this.tableName, this.db, this).where(field, operator, value);
   }
 
   static async transaction(callback: () => Promise<void>): Promise<void> {

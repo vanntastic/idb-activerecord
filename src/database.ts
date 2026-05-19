@@ -7,8 +7,20 @@ export class Database {
   private db: IDBDatabase | null = null;
   private models: Map<string, any> = new Map();
   private engine: SyncEngine | null = null;
+  private syncUser: string | null = null;
 
   constructor(private name: string, private version?: number) {}
+
+  setUser(userId: string): void {
+    this.syncUser = userId;
+    if (this.engine) {
+      this.engine.setUser(userId);
+    }
+  }
+
+  getUser(): string | null {
+    return this.syncUser;
+  }
 
   private resolveVersion(): Promise<number> {
     return new Promise((resolve, reject) => {
@@ -124,6 +136,9 @@ export class Database {
     if (!this.engine) {
       this.engine = new SyncEngine();
       this.engine.setDatabase(this.db);
+      if (this.syncUser) {
+        this.engine.setUser(this.syncUser);
+      }
     }
     return this.engine;
   }
