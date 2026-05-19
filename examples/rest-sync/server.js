@@ -18,24 +18,7 @@ const DB_PATH = path.join(__dirname, 'sync-demo.db');
 
 const db = new DatabaseSync(DB_PATH);
 
-// Create base table
-db.exec(`
-  CREATE TABLE IF NOT EXISTS tasks (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    title TEXT NOT NULL,
-    status TEXT DEFAULT 'pending',
-    updatedAt TEXT NOT NULL,
-    version INTEGER DEFAULT 1,
-    deleted_at TEXT,
-    owner_id TEXT DEFAULT 'demo'
-  )
-`);
-
-// Add columns if migrating from older schema
-try { db.exec('ALTER TABLE tasks ADD COLUMN version INTEGER DEFAULT 1'); } catch {}
-try { db.exec('ALTER TABLE tasks ADD COLUMN deleted_at TEXT'); } catch {}
-try { db.exec('ALTER TABLE tasks ADD COLUMN owner_id TEXT DEFAULT \'demo\''); } catch {}
-
+// Models are the source of truth - tables created on first sync via POST /schema
 db.exec(`
   CREATE TABLE IF NOT EXISTS migrations (
     version INTEGER PRIMARY KEY,
@@ -44,7 +27,8 @@ db.exec(`
   )
 `);
 
-console.log(`📦 SQLite database initialized at: ${DB_PATH}`);
+console.log(`📦 SQLite database ready at: ${DB_PATH}`);
+console.log(`📋 Tables created on-demand via POST /schema (schema-on-demand)`);
 
 // --- Helpers ---
 
@@ -98,27 +82,82 @@ async function handleRequest(req, res) {
     return sendJson(res, 200, { status: 'ok', timestamp: new Date().toISOString() });
   }
 
-  // Schema
+  // Schema: GET — dynamic introspection from SQLite
   if (pathname.startsWith('/schema/') && method === 'GET') {
     const table = pathname.slice('/schema/'.length);
-    if (table === 'tasks') {
-      return sendJson(res, 200, {
-        name: 'tasks',
-        columns: [
-          { name: 'id', type: 'integer', nullable: false },
-          { name: 'title', type: 'string', nullable: false },
-          { name: 'status', type: 'string', nullable: true },
-          { name: 'updatedAt', type: 'datetime', nullable: true },
-          { name: 'version', type: 'integer', nullable: false },
-          { name: 'deleted_at', type: 'datetime', nullable: true },
-          { name: 'owner_id', type: 'string', nullable: true }
-        ],
-        indexes: [
-          { name: 'pk', columns: ['id'], unique: true }
-        ]
-      });
+    if (!table || !/^[a-z_][a-z0-9_]*$/i.test(table)) {
+      return sendJson(res, 400, { error: 'Invalid table name' });
     }
-    return sendJson(res, 404, { error: `Unknown table: ${table}` });
+
+    const exists = db.prepare(
+      `SELECT name FROM sqlite_master WHERE type='table' AND name=?`
+    ).get(table);
+    if (!exists) {
+      return sendJson(res, 404, { error: `Table '${table}' not found` });
+    }
+
+    // Read actual columns from SQLite
+    const columns = db.prepare(`PRAGMA table_info(${table})`).all().map(col => ({
+      name: col.name,
+      type: col.type === 'INTEGER' ? 'integer' : 'string',
+      nullable: !col.notnull,
+      default: col.dflt_value
+    }));
+
+    // Read indexes
+    const indexes = db.prepare(
+      `SELECT name FROM sqlite_master WHERE type='index' AND tbl_name=?`
+    ).all(table).map(idx => ({ name: idx.name }));
+
+    return sendJson(res, 200, { name: table, columns, indexes });
+  }
+
+  // Schema: POST — create table on demand if it doesn't exist
+  if (pathname === '/schema' && method === 'POST') {
+    const body = await readBody(req);
+    const table = body.table;
+    if (!table || !/^[a-z_][a-z0-9_]*$/i.test(table)) {
+      return sendJson(res, 400, { error: 'Invalid or missing table name' });
+    }
+
+    const reserved = ['migrations'];
+    if (reserved.includes(table)) {
+      return sendJson(res, 400, { error: `Table '${table}' is reserved` });
+    }
+
+    // Check if already exists
+    const exists = db.prepare(
+      `SELECT name FROM sqlite_master WHERE type='table' AND name=?`
+    ).get(table);
+
+    if (exists) {
+      return sendJson(res, 200, { created: false, table });
+    }
+
+    // Build columns from hints; always include sync fields
+    const userCols = (body.columns || [])
+      .filter(c => !['id','updatedAt','version','deleted_at','owner_id'].includes(c.name))
+      .map(c => {
+        const sqlType = c.type === 'integer' || c.type === 'boolean' ? 'INTEGER' : 'TEXT';
+        return `${c.name} ${sqlType}`;
+      })
+      .join(', ');
+
+    const colsSql = userCols ? `, ${userCols}` : '';
+
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS ${table} (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        updatedAt TEXT NOT NULL DEFAULT '',
+        version INTEGER DEFAULT 1,
+        deleted_at TEXT,
+        owner_id TEXT DEFAULT 'demo'
+        ${colsSql}
+      )
+    `);
+
+    console.log(`🆕 Created table: ${table}`);
+    return sendJson(res, 200, { created: true, table });
   }
 
   // Migrations
@@ -131,140 +170,95 @@ async function handleRequest(req, res) {
     return sendJson(res, 200, { applied: true, version: body.version });
   }
 
-  // Tasks: GET (pull)
-  if (pathname === '/tasks' && method === 'GET') {
+  // Generic table handlers handle all models (tasks, notes, labels, etc.)
+  // Tables are created on-demand via POST /schema before first sync
+
+  // Generic table: GET (pull)
+  const genericTable = pathname.match(/^\/([a-z_][a-z0-9_]*)$/i)?.[1];
+  if (genericTable && method === 'GET') {
+    const tableExists = db.prepare(
+      `SELECT name FROM sqlite_master WHERE type='table' AND name=?`
+    ).get(genericTable);
+    if (!tableExists) return sendJson(res, 404, { error: `Table '${genericTable}' not found` });
+
     const since = url.searchParams.get('since');
-    const limit = url.searchParams.get('limit');
-    const offset = url.searchParams.get('offset');
     const ownerId = url.searchParams.get('owner_id') || 'demo';
     const includeDeleted = url.searchParams.get('include_deleted') === 'true';
 
-    let sql = 'SELECT id, title, status, updatedAt, version, deleted_at, owner_id FROM tasks';
-    const params = [];
-    const conditions = [];
+    const conditions = ['owner_id = ?'];
+    const params = [ownerId];
+    if (since) { conditions.push('updatedAt > ?'); params.push(since); }
+    if (!includeDeleted) { conditions.push('deleted_at IS NULL'); }
 
-    // Always scope to owner
-    conditions.push('owner_id = ?');
-    params.push(ownerId);
+    const rows = db.prepare(
+      `SELECT * FROM ${genericTable} WHERE ${conditions.join(' AND ')} ORDER BY id ASC`
+    ).all(...params);
 
-    if (since) {
-      conditions.push('updatedAt > ?');
-      params.push(since);
-    }
-
-    if (!includeDeleted) {
-      conditions.push('deleted_at IS NULL');
-    }
-
-    if (conditions.length > 0) {
-      sql += ' WHERE ' + conditions.join(' AND ');
-    }
-
-    sql += ' ORDER BY id ASC';
-
-    if (limit) {
-      sql += ' LIMIT ?';
-      params.push(Number(limit));
-
-      if (offset) {
-        sql += ' OFFSET ?';
-        params.push(Number(offset));
-      }
-    }
-
-    const rows = db.prepare(sql).all(...params);
-
-    // Map deleted_at -> _deletedAt for client compatibility
-    const mapped = rows.map(r => ({
-      id: r.id,
-      title: r.title,
-      status: r.status,
-      updatedAt: r.updatedAt,
+    return sendJson(res, 200, rows.map(r => ({
+      ...r,
       _version: r.version,
       _deletedAt: r.deleted_at,
-      owner_id: r.owner_id
-    }));
-
-    return sendJson(res, 200, mapped);
+    })));
   }
 
-  // Tasks: POST (push - upsert with version checking)
-  if (pathname === '/tasks' && method === 'POST') {
+  // Generic table: POST (push — upsert)
+  if (genericTable && method === 'POST') {
+    const tableExists = db.prepare(
+      `SELECT name FROM sqlite_master WHERE type='table' AND name=?`
+    ).get(genericTable);
+    if (!tableExists) return sendJson(res, 404, { error: `Table '${genericTable}' not found` });
+
     const body = await readBody(req);
     const records = Array.isArray(body) ? body : [body];
-
     let pushed = 0;
     const rejected = [];
     const now = new Date().toISOString();
 
-    const insert = db.prepare(`
-      INSERT INTO tasks (title, status, updatedAt, version, deleted_at, owner_id)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `);
+    // Get column names for this table (excluding sync meta columns)
+    const cols = db.prepare(`PRAGMA table_info(${genericTable})`).all();
+    const userColNames = cols
+      .map(c => c.name)
+      .filter(n => !['id', 'updatedAt', 'version', 'deleted_at', 'owner_id'].includes(n));
 
     for (const record of records) {
       const incomingVersion = record._version || 1;
       const deletedAt = record._deletedAt || null;
       const ownerId = record.owner_id || 'demo';
 
-      if (record.id) {
-        // Check existing record for version conflict
-        const existing = db.prepare('SELECT version FROM tasks WHERE id = ?').get(record.id);
+      const userVals = userColNames.map(n => record[n] ?? null);
+      const allCols = [...userColNames, 'updatedAt', 'version', 'deleted_at', 'owner_id'];
+      const allVals = [...userVals, record.updatedAt || now, incomingVersion, deletedAt, ownerId];
 
+      if (record.id) {
+        const existing = db.prepare(`SELECT version FROM ${genericTable} WHERE id = ?`).get(record.id);
         if (existing && existing.version > incomingVersion) {
           rejected.push({ id: record.id, reason: 'version_conflict', serverVersion: existing.version });
           continue;
         }
-
-        // Upsert with version
+        const setClauses = allCols.map(c => `${c} = excluded.${c}`).join(', ');
         db.prepare(`
-          INSERT INTO tasks (id, title, status, updatedAt, version, deleted_at, owner_id)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
-          ON CONFLICT(id) DO UPDATE SET
-            title = excluded.title,
-            status = excluded.status,
-            updatedAt = excluded.updatedAt,
-            version = excluded.version,
-            deleted_at = excluded.deleted_at,
-            owner_id = excluded.owner_id
-        `).run(
-          record.id,
-          record.title,
-          record.status || 'pending',
-          record.updatedAt || now,
-          incomingVersion,
-          deletedAt,
-          ownerId
-        );
+          INSERT INTO ${genericTable} (id, ${allCols.join(', ')})
+          VALUES (?, ${allCols.map(() => '?').join(', ')})
+          ON CONFLICT(id) DO UPDATE SET ${setClauses}
+        `).run(record.id, ...allVals);
       } else {
-        insert.run(
-          record.title,
-          record.status || 'pending',
-          record.updatedAt || now,
-          incomingVersion,
-          deletedAt,
-          ownerId
-        );
+        db.prepare(
+          `INSERT INTO ${genericTable} (${allCols.join(', ')}) VALUES (${allCols.map(() => '?').join(', ')})`
+        ).run(...allVals);
       }
       pushed++;
     }
-
     return sendJson(res, 200, { pushed, rejected });
   }
 
-  // Tasks: DELETE (single) — soft delete
-  const taskMatch = pathname.match(/^\/tasks\/(\d+)$/);
-  if (taskMatch && method === 'DELETE') {
-    const id = Number(taskMatch[1]);
+  // Generic table: DELETE (single — soft delete)
+  const genericItemMatch = pathname.match(/^\/([a-z_][a-z0-9_]*)\/(\d+)$/i);
+  if (genericItemMatch && method === 'DELETE') {
+    const [, gTable, gId] = genericItemMatch;
     const now = new Date().toISOString();
-    db.prepare('UPDATE tasks SET deleted_at = ?, updatedAt = ?, version = version + 1 WHERE id = ?').run(now, now, id);
+    db.prepare(`UPDATE ${gTable} SET deleted_at = ?, updatedAt = ?, version = version + 1 WHERE id = ?`)
+      .run(now, now, Number(gId));
     return sendJson(res, 200, { deleted: 1 });
-  }
-
-  // Tasks: clear all (for demo convenience)
-  if (pathname === '/tasks' && method === 'DELETE') {
-    const result = db.prepare('DELETE FROM tasks').run();
-    return sendJson(res, 200, { deleted: result.changes });
   }
 
   sendJson(res, 404, { error: 'Not Found', path: pathname, method });
@@ -281,13 +275,14 @@ const server = http.createServer((req, res) => {
 
 server.listen(PORT, () => {
   console.log(`\n🚀 REST Sync API running at http://localhost:${PORT}`);
+  console.log(`\nSchema-on-demand: Models define tables, server creates them on first sync`);
   console.log(`\nEndpoints:`);
   console.log(`  GET    /health`);
-  console.log(`  GET    /schema/tasks`);
-  console.log(`  GET    /tasks?since=&limit=&offset=&owner_id=&include_deleted=`);
-  console.log(`  POST   /tasks           (body: array of records with _version, _deletedAt)`);
-  console.log(`  DELETE /tasks           (hard clear all)`);
-  console.log(`  DELETE /tasks/:id       (soft delete)`);
+  console.log(`  GET    /schema/:table   (get schema for any table)`);
+  console.log(`  POST   /schema          (create table on-demand)`);
+  console.log(`  GET    /:table          (pull any table: tasks, notes, labels, ...)`);
+  console.log(`  POST   /:table          (push/upsert to any table)`);
+  console.log(`  DELETE /:table/:id     (soft delete any record)`);
   console.log(`  POST   /migrations      (body: { version, name })`);
   console.log(`\nPress Ctrl+C to stop\n`);
 });

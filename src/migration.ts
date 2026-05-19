@@ -40,7 +40,7 @@ export class TableBuilder {
 
   constructor(private store: IDBObjectStore) {}
 
-  autoIncrement(name: string): TableBuilder {
+  autoIncrement(_name: string): TableBuilder {
     // Key path is already set in createTable
     return this;
   }

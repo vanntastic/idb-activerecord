@@ -75,6 +75,7 @@
     }
     .task-item.done .task-status { background: #22c55e; color: white; }
     .task-item.deleted .task-status { background: #ef4444; color: white; }
+    .task-item.pinned { border-left: 3px solid #f59e0b; }
     .toggle-btn { background: #334155; color: #e2e8f0; }
     .delete-btn { background: transparent; color: #ef4444; border: 1px solid #ef4444; }
     .user-switcher {
@@ -173,6 +174,31 @@
   <div class="panel">
     <h2>Local Tasks</h2>
     <div id="taskList"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Add Note</h2>
+    <input type="text" id="noteContent" placeholder="Write a note...">
+    <button class="btn-primary" onclick="addNote()">Add Note</button>
+  </div>
+
+  <div class="panel">
+    <h2>Local Notes</h2>
+    <div id="noteList"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Add Label <span style="color:#64748b;font-size:0.8rem;font-weight:400">— table created on first sync</span></h2>
+    <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.75rem">
+      <input type="text" id="labelName" placeholder="Label name..." style="margin-bottom:0;flex:1">
+      <input type="color" id="labelColor" value="#6366f1" style="width:2.5rem;height:2.5rem;padding:0.1rem;border-radius:6px;border:1px solid #334155;background:#0f172a;cursor:pointer">
+    </div>
+    <button class="btn-primary" onclick="addLabel()">Add Label</button>
+  </div>
+
+  <div class="panel">
+    <h2>Local Labels</h2>
+    <div id="labelList"></div>
   </div>
 
   <div class="panel">

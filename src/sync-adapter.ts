@@ -159,6 +159,12 @@ export interface SyncAdapter {
   applyMigration(migration: SyncMigration): Promise<void>;
 
   /**
+   * Ensure a table exists on the remote, creating it if necessary.
+   * columns is an optional hint; the server may infer schema from first push.
+   */
+  ensureTable(table: string, columns?: ColumnDef[]): Promise<void>;
+
+  /**
    * Resolve a conflict between local and remote records
    */
   resolveConflict<T extends ActiveRecord>(
@@ -227,6 +233,10 @@ export abstract class BaseAdapter implements SyncAdapter {
    * Apply migration to remote (must be implemented by subclass)
    */
   abstract applyMigration(migration: SyncMigration): Promise<void>;
+
+  async ensureTable(_table: string, _columns?: ColumnDef[]): Promise<void> {
+    // no-op by default; subclasses may override
+  }
 
   /**
    * Resolve conflict using specified strategy

@@ -9,7 +9,8 @@ import {
   SyncResult,
   TableSchema,
   SyncMigration,
-  SyncStatus
+  SyncStatus,
+  ColumnDef
 } from '../sync-adapter.js';
 import { ActiveRecord } from '../activerecord.js';
 
@@ -217,6 +218,19 @@ export class RestAdapter extends BaseAdapter {
       this.updateState({ status: SyncStatus.ERROR });
       throw error;
     }
+  }
+
+  /**
+   * Ensure a table exists on the remote, creating it if missing.
+   * POSTs to /schema with { table, columns } — server creates if absent.
+   */
+  async ensureTable(table: string, columns?: ColumnDef[]): Promise<void> {
+    if (!this.isConnected()) {
+      throw new Error('Adapter not connected. Call connect() first.');
+    }
+    await this.request('POST', '/schema', {
+      body: JSON.stringify({ table, columns: columns ?? [] })
+    });
   }
 
   /**

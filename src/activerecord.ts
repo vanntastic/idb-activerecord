@@ -3,7 +3,7 @@
 import { QueryBuilder } from './query-builder.js';
 import { ValidationRule } from './types.js';
 
-export class ActiveRecord<T = any> {
+export class ActiveRecord<_T = any> {
   id?: number;
   _version?: number;
   _deletedAt?: string | null;

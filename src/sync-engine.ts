@@ -192,24 +192,27 @@ export class SyncEngine {
       return result;
     }
 
-    // 1. Push local pending changes first (client-wins on push)
+    // 1. Ensure the remote table exists before pushing
+    await adapter.ensureTable(table);
+
+    // 2. Push local pending changes
     onProgress('Pushing local changes...');
     const pushResult = await this.pushChanges(table, adapter);
     result.pushed = pushResult.pushed;
     result.errors.push(...pushResult.errors);
 
-    // 2. Pull remote changes
+    // 3. Pull remote changes
     onProgress('Pulling remote changes...');
     const remoteRecords = await this.pullChanges(table, adapter);
     result.pulled = remoteRecords.length;
 
-    // 3. Merge remote into local with conflict resolution
+    // 4. Merge remote into local with conflict resolution
     onProgress('Merging changes...');
     const mergeResult = await this.mergeChanges(table, remoteRecords, adapter, strategy);
     result.conflicts = mergeResult.conflicts;
     result.errors.push(...mergeResult.errors);
 
-    // 4. Update sync metadata
+    // 5. Update sync metadata
     await this.setSyncMeta(table, {
       lastPushAt: new Date().toISOString(),
       lastPullAt: new Date().toISOString()
