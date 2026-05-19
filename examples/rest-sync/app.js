@@ -59,6 +59,7 @@ const adapter = new RestAdapter();
 
 async function init() {
   await db.connect();
+  db.setUser(currentUser); // Set initial user for sync filtering
 
   try {
     await adapter.connect({
@@ -358,6 +359,7 @@ async function renderStatus() {
 
 function switchUser(name) {
   currentUser = name;
+  db.setUser(name); // Update sync user filter
   document.getElementById('btn-alice').className = name === 'alice' ? 'user-btn active' : 'user-btn';
   document.getElementById('btn-bob').className = name === 'bob' ? 'user-btn active' : 'user-btn';
   logAction(`Switched to user: ${name}`);

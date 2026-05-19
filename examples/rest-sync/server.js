@@ -112,7 +112,10 @@ async function handleRequest(req, res) {
     return sendJson(res, 200, { name: table, columns, indexes });
   }
 
-  // Schema: POST — create table on demand if it doesn't exist
+  // Schema: POST — create table from columns spec, OR ALTER to add missing columns.
+  // The client (sync engine + adapter) is the source of truth for all columns,
+  // including sync protocol meta columns. This endpoint just translates the
+  // ColumnDef spec into SQL DDL.
   if (pathname === '/schema' && method === 'POST') {
     const body = await readBody(req);
     const table = body.table;
@@ -125,39 +128,59 @@ async function handleRequest(req, res) {
       return sendJson(res, 400, { error: `Table '${table}' is reserved` });
     }
 
-    // Check if already exists
+    const columns = body.columns || [];
+    if (!Array.isArray(columns) || columns.length === 0) {
+      return sendJson(res, 400, { error: 'columns array is required' });
+    }
+
+    // Translate ColumnDef -> SQL column definition
+    const toSqlType = (t) => {
+      if (t === 'integer' || t === 'boolean') return 'INTEGER';
+      return 'TEXT';
+    };
+    const formatDefault = (val, type) => {
+      if (val === undefined || val === null) return '';
+      if (typeof val === 'string') return ` DEFAULT '${val.replace(/'/g, "''")}'`;
+      if (typeof val === 'number' || typeof val === 'boolean') return ` DEFAULT ${Number(val)}`;
+      return '';
+    };
+    const toSqlDdl = (col) => {
+      const parts = [`${col.name} ${toSqlType(col.type)}`];
+      if (col.primaryKey) parts.push('PRIMARY KEY');
+      if (col.autoIncrement) parts.push('AUTOINCREMENT');
+      if (col.nullable === false && !col.primaryKey) parts.push('NOT NULL');
+      const def = formatDefault(col.default, col.type);
+      if (def) parts.push(def.trim());
+      return parts.join(' ');
+    };
+
     const exists = db.prepare(
       `SELECT name FROM sqlite_master WHERE type='table' AND name=?`
     ).get(table);
 
-    if (exists) {
-      return sendJson(res, 200, { created: false, table });
+    if (!exists) {
+      const colsSql = columns.map(toSqlDdl).join(', ');
+      db.exec(`CREATE TABLE ${table} (${colsSql})`);
+      console.log(`🆕 Created table: ${table} (${columns.length} columns)`);
+      return sendJson(res, 200, { created: true, altered: [], table });
     }
 
-    // Build columns from hints; always include sync fields
-    const userCols = (body.columns || [])
-      .filter(c => !['id','updatedAt','version','deleted_at','owner_id'].includes(c.name))
-      .map(c => {
-        const sqlType = c.type === 'integer' || c.type === 'boolean' ? 'INTEGER' : 'TEXT';
-        return `${c.name} ${sqlType}`;
-      })
-      .join(', ');
-
-    const colsSql = userCols ? `, ${userCols}` : '';
-
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS ${table} (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        updatedAt TEXT NOT NULL DEFAULT '',
-        version INTEGER DEFAULT 1,
-        deleted_at TEXT,
-        owner_id TEXT DEFAULT 'demo'
-        ${colsSql}
-      )
-    `);
-
-    console.log(`🆕 Created table: ${table}`);
-    return sendJson(res, 200, { created: true, table });
+    // Table exists — ALTER to add any missing columns (excluding PK)
+    const existingCols = new Set(
+      db.prepare(`PRAGMA table_info(${table})`).all().map(c => c.name)
+    );
+    const altered = [];
+    for (const col of columns) {
+      if (existingCols.has(col.name) || col.primaryKey) continue;
+      try {
+        db.exec(`ALTER TABLE ${table} ADD COLUMN ${toSqlDdl(col)}`);
+        altered.push(col.name);
+        console.log(`🔧 Added column ${col.name} to ${table}`);
+      } catch (err) {
+        // Column may have been added by a concurrent request; ignore
+      }
+    }
+    return sendJson(res, 200, { created: false, altered, table });
   }
 
   // Migrations
@@ -214,7 +237,8 @@ async function handleRequest(req, res) {
     const rejected = [];
     const now = new Date().toISOString();
 
-    // Get column names for this table (excluding sync meta columns)
+    // Get column names for this table (excluding sync meta columns).
+    // Schema must already be set up via POST /schema before pushing.
     const cols = db.prepare(`PRAGMA table_info(${genericTable})`).all();
     const userColNames = cols
       .map(c => c.name)
