@@ -61,6 +61,8 @@ export interface ColumnDef {
   type: string;
   nullable: boolean;
   default?: unknown;
+  primaryKey?: boolean;
+  autoIncrement?: boolean;
 }
 
 export interface IndexDef {

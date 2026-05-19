@@ -6,8 +6,23 @@ import {
   SyncAdapter,
   SyncQuery,
   SyncResult,
-  ConflictStrategy
+  ConflictStrategy,
+  ColumnDef
 } from './sync-adapter.js';
+
+const SYNC_META_FIELDS = new Set([
+  'id', 'updatedAt', 'version', 'deleted_at', 'owner_id', '_version', '_deletedAt'
+]);
+
+// Sync protocol meta columns — declared client-side so any backend that
+// honors POST /schema can host a sync target without hardcoding these fields.
+const SYNC_META_COLUMNS: ColumnDef[] = [
+  { name: 'id', type: 'integer', nullable: false, primaryKey: true, autoIncrement: true },
+  { name: 'updatedAt', type: 'datetime', nullable: false, default: '' },
+  { name: 'version', type: 'integer', nullable: false, default: 1 },
+  { name: 'deleted_at', type: 'datetime', nullable: true },
+  { name: 'owner_id', type: 'string', nullable: true, default: 'demo' }
+];
 
 export interface SyncMeta {
   table: string;
@@ -201,8 +216,10 @@ export class SyncEngine {
       return result;
     }
 
-    // 1. Ensure the remote table exists before pushing
-    await adapter.ensureTable(table);
+    // 1. Ensure the remote table exists with full schema (sync meta + user columns)
+    const pendingForSchema = await this.getPendingChanges(table);
+    const userColumns = this.deriveColumns(pendingForSchema.map(c => c.data));
+    await adapter.ensureTable(table, [...SYNC_META_COLUMNS, ...userColumns]);
 
     // 2. Push local pending changes
     onProgress('Pushing local changes...');
@@ -229,6 +246,27 @@ export class SyncEngine {
 
     onProgress('Sync complete.');
     return result;
+  }
+
+  // ------------------------------------------------------------------
+  // Schema derivation: infer columns from local record samples
+  // ------------------------------------------------------------------
+
+  private deriveColumns(records: any[]): ColumnDef[] {
+    const colMap = new Map<string, ColumnDef>();
+    for (const record of records) {
+      if (!record || typeof record !== 'object') continue;
+      for (const [key, val] of Object.entries(record)) {
+        if (SYNC_META_FIELDS.has(key)) continue;
+        if (colMap.has(key)) continue;
+        let type = 'string';
+        if (typeof val === 'number') type = 'integer';
+        else if (typeof val === 'boolean') type = 'boolean';
+        else if (val instanceof Date) type = 'datetime';
+        colMap.set(key, { name: key, type, nullable: true });
+      }
+    }
+    return Array.from(colMap.values());
   }
 
   // ------------------------------------------------------------------
