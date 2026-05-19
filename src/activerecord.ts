@@ -298,6 +298,16 @@ export class ActiveRecord<_T = any> {
   }
 
   /**
+   * Optional listener invoked after a change is logged. Used by Database to
+   * trigger auto-sync. Set via ActiveRecord.setChangeListener().
+   */
+  private static changeListener: ((table: string) => void) | null = null;
+
+  static setChangeListener(listener: ((table: string) => void) | null): void {
+    ActiveRecord.changeListener = listener;
+  }
+
+  /**
    * Log a sync change to the __sync_changes store
    */
   private static logChange(
@@ -320,6 +330,11 @@ export class ActiveRecord<_T = any> {
         timestamp: new Date().toISOString(),
         synced: false
       });
+      tx.oncomplete = () => {
+        if (ActiveRecord.changeListener) {
+          try { ActiveRecord.changeListener(table); } catch { /* ignore listener errors */ }
+        }
+      };
     } catch {
       // Silently fail if sync stores aren't ready
     }

@@ -66,6 +66,21 @@ async function init() {
       url: API_URL,
       endpointPattern: '/{table}'
     });
+
+    // Auto-sync: any CUD on a model with enableSync = true triggers a debounced
+    // sync; pollIntervalMs pulls remote changes periodically for cross-device updates.
+    db.enableAutoSync(adapter, {
+      debounceMs: 400,
+      pollIntervalMs: 5000,
+      onSync: (table, result) => {
+        logAction(`🔄 ${table}: pushed ${result.pushed}, pulled ${result.pulled}`);
+        renderStatus();
+        if (table === 'tasks') renderTasks();
+        else if (table === 'notes') renderNotes();
+        else if (table === 'labels') renderLabels();
+      },
+      onError: (table, err) => logAction(`❌ Auto-sync ${table} failed: ${err.message}`)
+    });
   } catch (err) {
     logAction(`⚠️ Could not connect to ${API_URL}. Run: npm run example:sync-api`);
     console.error(err);
