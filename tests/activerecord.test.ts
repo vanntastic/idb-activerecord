@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import { ActiveRecord } from '../src/activerecord';
+import { MockIDBDatabase } from './mocks/indexeddb';
 
 describe('ActiveRecord', () => {
   describe('setDatabase', () => {
@@ -181,6 +182,85 @@ describe('ActiveRecord', () => {
       const record = { name: 'Test' };
       (TestModel as any).afterDestroy?.(record);
       expect(afterDestroyCalled).toBe(true);
+    });
+  });
+
+  describe('change listener (auto-sync hook)', () => {
+    afterEach(() => {
+      ActiveRecord.setChangeListener(null);
+    });
+
+    function makeDbWithSyncStores(): IDBDatabase {
+      const db = new MockIDBDatabase('test', 1) as unknown as IDBDatabase;
+      (db as any).createObjectStore('__sync_changes', { keyPath: 'id', autoIncrement: true });
+      (db as any).createObjectStore('items', { keyPath: 'id', autoIncrement: true });
+      return db;
+    }
+
+    it('invokes the change listener with the table name after a sync-tracked create', async () => {
+      class Item extends ActiveRecord<any> {
+        static tableName = 'items';
+        static enableSync = true;
+      }
+      Item.setDatabase(makeDbWithSyncStores());
+
+      const calls: string[] = [];
+      ActiveRecord.setChangeListener((table) => calls.push(table));
+
+      await Item.create({ title: 'A' });
+      // Wait for tx commit (mock fires oncomplete after ~5ms)
+      await new Promise(r => setTimeout(r, 30));
+
+      expect(calls).toContain('items');
+    });
+
+    it('does not invoke the listener when enableSync is false', async () => {
+      class Local extends ActiveRecord<any> {
+        static tableName = 'items';
+        // enableSync defaults to false
+      }
+      Local.setDatabase(makeDbWithSyncStores());
+
+      const calls: string[] = [];
+      ActiveRecord.setChangeListener((table) => calls.push(table));
+
+      await Local.create({ title: 'A' });
+      await new Promise(r => setTimeout(r, 30));
+
+      expect(calls).toHaveLength(0);
+    });
+
+    it('setChangeListener(null) removes the listener', async () => {
+      class Item extends ActiveRecord<any> {
+        static tableName = 'items';
+        static enableSync = true;
+      }
+      Item.setDatabase(makeDbWithSyncStores());
+
+      const calls: string[] = [];
+      ActiveRecord.setChangeListener((table) => calls.push(table));
+      ActiveRecord.setChangeListener(null);
+
+      await Item.create({ title: 'A' });
+      await new Promise(r => setTimeout(r, 30));
+
+      expect(calls).toHaveLength(0);
+    });
+
+    it('listener errors do not break the change-logging path', async () => {
+      class Item extends ActiveRecord<any> {
+        static tableName = 'items';
+        static enableSync = true;
+      }
+      Item.setDatabase(makeDbWithSyncStores());
+
+      ActiveRecord.setChangeListener(() => {
+        throw new Error('listener boom');
+      });
+
+      // Should not throw
+      await expect(Item.create({ title: 'A' })).resolves.toBeDefined();
+      await new Promise(r => setTimeout(r, 30));
     });
   });
 });

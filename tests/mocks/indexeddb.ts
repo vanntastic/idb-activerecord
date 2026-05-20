@@ -262,6 +262,14 @@ export class MockIDBTransaction implements IDBTransaction {
         this.stores.set(name, store);
       }
     });
+
+    // Auto-fire oncomplete on the next macrotask, after request callbacks
+    // (which are scheduled with setTimeout(0)) have had a chance to run.
+    setTimeout(() => {
+      if (!this.aborted) {
+        this.oncomplete?.call(this, new Event('complete'));
+      }
+    }, 5);
   }
 
   addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions): void {}

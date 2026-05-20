@@ -256,6 +256,148 @@ describe('SyncEngine', () => {
     expect(req.result._deletedAt).toBeDefined();
   });
 
+  describe('user context', () => {
+    it('setUser stores the user id', () => {
+      const engine = new SyncEngine();
+      engine.setUser('alice');
+      expect(engine.getUser()).toBe('alice');
+    });
+
+    it('pullChanges filters by owner_id when user is set', async () => {
+      const engine = new SyncEngine();
+      engine.setDatabase(createMockDB());
+      engine.setUser('alice');
+
+      let capturedQuery: SyncQuery | null = null;
+      const adapter = new TestAdapter();
+      await adapter.connect({ url: 'http://test' });
+      // Spy on pull to capture the query
+      const origPull = adapter.pull.bind(adapter);
+      adapter.pull = async (q: SyncQuery) => {
+        capturedQuery = q;
+        return origPull(q);
+      };
+
+      await engine.pullChanges('tasks', adapter);
+      expect(capturedQuery).not.toBeNull();
+      expect(capturedQuery!.where).toEqual({ owner_id: 'alice' });
+    });
+
+    it('pullChanges does not filter by owner_id when user is unset', async () => {
+      const engine = new SyncEngine();
+      engine.setDatabase(createMockDB());
+
+      let capturedQuery: SyncQuery | null = null;
+      const adapter = new TestAdapter();
+      await adapter.connect({ url: 'http://test' });
+      const origPull = adapter.pull.bind(adapter);
+      adapter.pull = async (q: SyncQuery) => {
+        capturedQuery = q;
+        return origPull(q);
+      };
+
+      await engine.pullChanges('tasks', adapter);
+      expect(capturedQuery!.where).toBeUndefined();
+    });
+
+    it('pullChanges always sets includeDeleted: true so tombstones propagate', async () => {
+      const engine = new SyncEngine();
+      engine.setDatabase(createMockDB());
+
+      let capturedQuery: SyncQuery | null = null;
+      const adapter = new TestAdapter();
+      await adapter.connect({ url: 'http://test' });
+      const origPull = adapter.pull.bind(adapter);
+      adapter.pull = async (q: SyncQuery) => {
+        capturedQuery = q;
+        return origPull(q);
+      };
+
+      await engine.pullChanges('tasks', adapter);
+      expect(capturedQuery!.includeDeleted).toBe(true);
+    });
+  });
+
+  describe('schema (ensureTable)', () => {
+    it('passes sync meta columns + derived user columns to ensureTable', async () => {
+      const mockDb = createMockDB();
+      const engine = new SyncEngine();
+      engine.setDatabase(mockDb);
+
+      // Seed a pending change so derivedColumns has something to work with
+      const tx = mockDb.transaction(['__sync_changes'], 'readwrite');
+      tx.objectStore('__sync_changes').add({
+        table: 'tasks',
+        recordId: 1,
+        action: 'create',
+        data: { id: 1, title: 'Hello', status: 'pending', owner_id: 'alice', updatedAt: new Date().toISOString(), _version: 1 },
+        timestamp: new Date().toISOString(),
+        synced: false
+      });
+      await new Promise(r => setTimeout(r, 10));
+
+      let capturedColumns: any[] | undefined;
+      const adapter = new TestAdapter();
+      await adapter.connect({ url: 'http://test' });
+      const origEnsure = adapter.ensureTable.bind(adapter);
+      adapter.ensureTable = async (table: string, columns?: any[]) => {
+        capturedColumns = columns;
+        return origEnsure(table, columns);
+      };
+
+      await engine.sync('tasks', adapter);
+
+      const names = capturedColumns!.map(c => c.name);
+      // Sync meta columns must be present
+      for (const meta of ['id', 'updatedAt', 'version', 'deleted_at', 'owner_id']) {
+        expect(names).toContain(meta);
+      }
+      // Derived user columns from the pending record (excluding meta fields)
+      expect(names).toContain('title');
+      expect(names).toContain('status');
+      // Sync meta wire fields (_version, _deletedAt) must NOT leak as columns
+      expect(names).not.toContain('_version');
+      expect(names).not.toContain('_deletedAt');
+
+      const idCol = capturedColumns!.find(c => c.name === 'id');
+      expect(idCol.primaryKey).toBe(true);
+      expect(idCol.autoIncrement).toBe(true);
+    });
+
+    it('infers integer type for numeric fields and string for text', async () => {
+      const mockDb = createMockDB();
+      const engine = new SyncEngine();
+      engine.setDatabase(mockDb);
+
+      const tx = mockDb.transaction(['__sync_changes'], 'readwrite');
+      tx.objectStore('__sync_changes').add({
+        table: 'tasks',
+        recordId: 1,
+        action: 'create',
+        data: { id: 1, title: 'Hello', priority: 5, done: true, updatedAt: new Date().toISOString(), _version: 1 },
+        timestamp: new Date().toISOString(),
+        synced: false
+      });
+      await new Promise(r => setTimeout(r, 10));
+
+      let capturedColumns: any[] | undefined;
+      const adapter = new TestAdapter();
+      await adapter.connect({ url: 'http://test' });
+      const origEnsure = adapter.ensureTable.bind(adapter);
+      adapter.ensureTable = async (table: string, columns?: any[]) => {
+        capturedColumns = columns;
+        return origEnsure(table, columns);
+      };
+
+      await engine.sync('tasks', adapter);
+
+      const byName = (n: string) => capturedColumns!.find(c => c.name === n);
+      expect(byName('title').type).toBe('string');
+      expect(byName('priority').type).toBe('integer');
+      expect(byName('done').type).toBe('boolean');
+    });
+  });
+
   it('should clear sync data', async () => {
     const mockDb = createMockDB();
     const engine = new SyncEngine();

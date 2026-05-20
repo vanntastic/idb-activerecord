@@ -167,6 +167,57 @@ describe('RestAdapter', () => {
 
     await expect(adapter.push(plainRecords)).rejects.toThrow('Cannot push records without tableName');
   });
+
+  it('should send include_deleted=true query param when SyncQuery.includeDeleted is set', async () => {
+    const adapter = new RestAdapter();
+    await adapter.connect({ url: 'http://localhost:3000' });
+
+    let capturedUrl = '';
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = async (url: RequestInfo | URL) => {
+      capturedUrl = url.toString();
+      return new Response(JSON.stringify([]), { status: 200 });
+    };
+
+    await adapter.pull({ table: 'tasks', includeDeleted: true });
+    globalThis.fetch = origFetch;
+
+    expect(capturedUrl).toContain('include_deleted=true');
+  });
+
+  it('should omit include_deleted when not set', async () => {
+    const adapter = new RestAdapter();
+    await adapter.connect({ url: 'http://localhost:3000' });
+
+    let capturedUrl = '';
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = async (url: RequestInfo | URL) => {
+      capturedUrl = url.toString();
+      return new Response(JSON.stringify([]), { status: 200 });
+    };
+
+    await adapter.pull({ table: 'tasks' });
+    globalThis.fetch = origFetch;
+
+    expect(capturedUrl).not.toContain('include_deleted');
+  });
+
+  it('should send where filters as query params', async () => {
+    const adapter = new RestAdapter();
+    await adapter.connect({ url: 'http://localhost:3000' });
+
+    let capturedUrl = '';
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = async (url: RequestInfo | URL) => {
+      capturedUrl = url.toString();
+      return new Response(JSON.stringify([]), { status: 200 });
+    };
+
+    await adapter.pull({ table: 'tasks', where: { owner_id: 'alice' } });
+    globalThis.fetch = origFetch;
+
+    expect(capturedUrl).toContain('owner_id=alice');
+  });
 });
 
 // --- Test SyncMigration type ---
