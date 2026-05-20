@@ -187,7 +187,7 @@ export class Database {
         for (const [tableName, model] of this.models) {
           if (model.enableSync) this.pendingSyncTables.add(tableName);
         }
-        this.flushAutoSync();
+        this.runWhenIdle(() => this.flushAutoSync());
       }, options.pollIntervalMs);
     }
   }
@@ -211,8 +211,21 @@ export class Database {
     if (this.debounceTimer) clearTimeout(this.debounceTimer);
     this.debounceTimer = setTimeout(() => {
       this.debounceTimer = null;
-      this.flushAutoSync();
+      // After the debounce settles, defer to an idle window so the sync work
+      // (JSON parsing, merge loop) doesn't compete with active rendering.
+      this.runWhenIdle(() => this.flushAutoSync());
     }, debounceMs);
+  }
+
+  private runWhenIdle(fn: () => void): void {
+    const ric = (globalThis as any).requestIdleCallback as
+      | ((cb: () => void, opts?: { timeout: number }) => number)
+      | undefined;
+    if (typeof ric === 'function') {
+      ric(fn, { timeout: 1000 });
+    } else {
+      setTimeout(fn, 0);
+    }
   }
 
   private async flushAutoSync(): Promise<void> {
