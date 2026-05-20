@@ -176,6 +176,37 @@ describe('Database', () => {
       expect(adapter.pushCalls).toHaveLength(0);
     });
 
+    it('forwards declared model columns to adapter.ensureTable via auto-sync', async () => {
+      const { db: database, mockDb } = makeDbWithSyncStores();
+      class Task extends ActiveRecord<any> {
+        static tableName = 'tasks';
+        static enableSync = true;
+        static columns = {
+          title: { type: 'string', nullable: false },
+          priority: { type: 'integer', default: 0 }
+        };
+      }
+      Task.setDatabase(mockDb);
+      database.registerModel(Task);
+
+      const adapter = new SpyAdapter();
+      await adapter.connect({ url: 'http://test' });
+      database.enableAutoSync(adapter, { debounceMs: 5 });
+
+      await Task.create({ title: 'Hello', priority: 5, owner_id: 'alice' });
+      await new Promise(r => setTimeout(r, 100));
+
+      expect(adapter.ensureCalls.length).toBeGreaterThanOrEqual(1);
+      const cols = adapter.ensureCalls[0].columns!;
+      const title = cols.find(c => c.name === 'title')!;
+      const priority = cols.find(c => c.name === 'priority')!;
+      expect(title.nullable).toBe(false);
+      expect(priority.type).toBe('integer');
+      expect(priority.default).toBe(0);
+
+      database.disableAutoSync();
+    });
+
     it('does not run when adapter is not connected', async () => {
       const { db: database, mockDb } = makeDbWithSyncStores();
       class Task extends ActiveRecord<any> {

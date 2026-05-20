@@ -62,9 +62,15 @@ interface User {
   age: number;
 }
 
-// Create a model class
+// Create a model class with a declared schema
 class User extends ActiveRecord<User> {
   static tableName = 'users';
+
+  static columns = {
+    name:  { type: 'string',  nullable: false },
+    email: { type: 'string',  nullable: false },
+    age:   { type: 'integer', default: 0 }
+  };
 }
 
 // Initialize the database
@@ -112,6 +118,12 @@ View this example in [CodeSandbox](https://codesandbox.io/p/sandbox/cqjngw)
 
     class User extends ActiveRecord {
       static tableName = 'users';
+
+      static columns = {
+        name:  { type: 'string',  nullable: false },
+        email: { type: 'string',  nullable: false },
+        age:   { type: 'integer', default: 0 }
+      };
     }
 
     const db = new Database('my-app');
@@ -146,6 +158,41 @@ View this example in [CodeSandbox](https://codesandbox.io/p/sandbox/cqjngw)
 </body>
 </html>
 ```
+
+## Defining Models
+
+A model is a class that extends `ActiveRecord` with a `tableName` and a `columns` declaration. `columns` is the single source of truth for the model's schema — it's used to provision remote tables when syncing, document what fields the model has, and (in future versions) drive type checking.
+
+```typescript
+class Task extends ActiveRecord<Task> {
+  static tableName = 'tasks';
+
+  static columns = {
+    title:    { type: 'string',  nullable: false },
+    status:   { type: 'string',  default: 'pending' },
+    priority: { type: 'integer', default: 0 },
+    done:     { type: 'boolean', default: false }
+  };
+}
+```
+
+### Column options
+
+Each entry under `columns` accepts these optional fields:
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `type` | `'string' \| 'integer' \| 'boolean' \| 'datetime'` | `'string'` | Field's data type |
+| `nullable` | `boolean` | `true` | Whether `null`/`undefined` is allowed |
+| `default` | `unknown` | — | Default value when not provided |
+| `primaryKey` | `boolean` | `false` | Marks the field as the primary key |
+| `autoIncrement` | `boolean` | `false` | Auto-incrementing integer (for primary keys) |
+
+You don't need to declare `id` — it's added automatically as an auto-incrementing primary key.
+
+### Schema-less mode
+
+If you omit `static columns`, the model is schema-less — any field you put on a record is stored as-is, and (when syncing) columns are inferred from records at sync time. This is convenient for prototyping but means fresh clients can't sync the schema until at least one record exists locally, and there's no protection against typos in field names. **Declaring columns is recommended for any real app.**
 
 ## API Reference
 
@@ -475,6 +522,12 @@ class Task extends ActiveRecord {
   static tableName = 'tasks';
   static enableSync = true;  // auto-tracks updatedAt, _version, change log
   static softDelete = true;  // destroy() sets _deletedAt instead of removing the row
+
+  // Declared schema — strict source of truth for sync (see "Defining columns")
+  static columns = {
+    title:  { type: 'string', nullable: false },
+    status: { type: 'string', default: 'pending' }
+  };
 }
 
 const db = new Database('my-app');  // version auto-managed
@@ -492,6 +545,29 @@ const result = await db.sync('tasks', adapter, {
 
 console.log(`Pushed ${result.pushed}, pulled ${result.pulled}, conflicts ${result.conflicts}`);
 ```
+
+### Auto-sync
+
+For most apps you don't need to call `db.sync()` manually. `db.enableAutoSync(adapter, options)` schedules a debounced sync after every CUD operation on any sync-enabled model, with optional periodic polling for remote updates:
+
+```typescript
+await adapter.connect({ url: 'https://api.example.com' });
+
+db.enableAutoSync(adapter, {
+  debounceMs: 400,        // coalesce bursts of writes
+  pollIntervalMs: 5000,   // pull remote changes every 5s (omit to disable polling)
+  onSync: (table, result) => console.log(`${table} synced`, result),
+  onError: (table, err) => console.error(table, err)
+});
+
+// Now any CUD on a model with `static enableSync = true` triggers a sync.
+await Task.create({ title: 'Buy milk' });  // sync fires ~400ms later
+
+// To stop:
+db.disableAutoSync();
+```
+
+Sync work is deferred via `requestIdleCallback` (with a 1s timeout fallback), so it doesn't compete with rendering. Models without `static enableSync = true` are ignored.
 
 ### Soft-deleted records
 

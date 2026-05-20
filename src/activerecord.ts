@@ -23,6 +23,49 @@ export class ActiveRecord<_T = any> {
   protected static validates?: Record<string, ValidationRule>;
   static enableSync: boolean = false;
   static softDelete: boolean = false;
+  /**
+   * Optional explicit column declarations. When set, these are the source of
+   * truth for the model's schema and are used by SyncEngine to call
+   * adapter.ensureTable(). Each entry can omit fields — sensible defaults
+   * are applied (nullable: true, type: 'string').
+   *
+   * Example:
+   *   static columns = {
+   *     title: { type: 'string', nullable: false },
+   *     priority: { type: 'integer', default: 0 }
+   *   };
+   */
+  static columns?: Record<string, Partial<{
+    type: string;
+    nullable: boolean;
+    default: unknown;
+    primaryKey: boolean;
+    autoIncrement: boolean;
+  }>>;
+
+  /**
+   * Normalize the static `columns` declaration into a ColumnDef[] array
+   * suitable for adapter.ensureTable(). Returns null if no columns declared.
+   */
+  static getColumnDefs(): Array<{
+    name: string;
+    type: string;
+    nullable: boolean;
+    default?: unknown;
+    primaryKey?: boolean;
+    autoIncrement?: boolean;
+  }> | null {
+    if (!this.columns) return null;
+    return Object.entries(this.columns).map(([name, def]) => ({
+      name,
+      type: def.type ?? 'string',
+      nullable: def.nullable ?? true,
+      ...(def.default !== undefined ? { default: def.default } : {}),
+      ...(def.primaryKey ? { primaryKey: true } : {}),
+      ...(def.autoIncrement ? { autoIncrement: true } : {})
+    }));
+  }
+
   errors: string[] = [];
 
   static setDatabase(db: IDBDatabase): void {

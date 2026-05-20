@@ -364,6 +364,78 @@ describe('SyncEngine', () => {
       expect(idCol.autoIncrement).toBe(true);
     });
 
+    it('declared SyncOptions.columns is strict: inferred columns are excluded', async () => {
+      const mockDb = createMockDB();
+      const engine = new SyncEngine();
+      engine.setDatabase(mockDb);
+
+      // Pending record has an `extra` field that is NOT declared
+      const tx = mockDb.transaction(['__sync_changes'], 'readwrite');
+      tx.objectStore('__sync_changes').add({
+        table: 'tasks',
+        recordId: 1,
+        action: 'create',
+        data: { id: 1, title: 'Hello', extra: 42, updatedAt: new Date().toISOString(), _version: 1 },
+        timestamp: new Date().toISOString(),
+        synced: false
+      });
+      await new Promise(r => setTimeout(r, 10));
+
+      let capturedColumns: any[] | undefined;
+      const adapter = new TestAdapter();
+      await adapter.connect({ url: 'http://test' });
+      const origEnsure = adapter.ensureTable.bind(adapter);
+      adapter.ensureTable = async (table: string, columns?: any[]) => {
+        capturedColumns = columns;
+        return origEnsure(table, columns);
+      };
+
+      await engine.sync('tasks', adapter, {
+        columns: [
+          { name: 'title', type: 'string', nullable: false, default: 'untitled' }
+        ]
+      });
+
+      const title = capturedColumns!.find(c => c.name === 'title');
+      expect(title.nullable).toBe(false);
+      expect(title.default).toBe('untitled');
+
+      // `extra` was inferred-only — it must NOT appear when declared columns are present
+      expect(capturedColumns!.find(c => c.name === 'extra')).toBeUndefined();
+    });
+
+    it('falls back to inference when no columns are declared', async () => {
+      const mockDb = createMockDB();
+      const engine = new SyncEngine();
+      engine.setDatabase(mockDb);
+
+      const tx = mockDb.transaction(['__sync_changes'], 'readwrite');
+      tx.objectStore('__sync_changes').add({
+        table: 'tasks',
+        recordId: 1,
+        action: 'create',
+        data: { id: 1, title: 'Hello', extra: 42, updatedAt: new Date().toISOString(), _version: 1 },
+        timestamp: new Date().toISOString(),
+        synced: false
+      });
+      await new Promise(r => setTimeout(r, 10));
+
+      let capturedColumns: any[] | undefined;
+      const adapter = new TestAdapter();
+      await adapter.connect({ url: 'http://test' });
+      const origEnsure = adapter.ensureTable.bind(adapter);
+      adapter.ensureTable = async (table: string, columns?: any[]) => {
+        capturedColumns = columns;
+        return origEnsure(table, columns);
+      };
+
+      // No options.columns — should infer
+      await engine.sync('tasks', adapter);
+
+      expect(capturedColumns!.find(c => c.name === 'title')).toBeDefined();
+      expect(capturedColumns!.find(c => c.name === 'extra')).toBeDefined();
+    });
+
     it('infers integer type for numeric fields and string for text', async () => {
       const mockDb = createMockDB();
       const engine = new SyncEngine();

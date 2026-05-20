@@ -161,7 +161,21 @@ export class Database {
   }
 
   async sync(table: string, adapter: SyncAdapter, options?: SyncOptions): Promise<SyncResult> {
-    return this.getSyncEngine().sync(table, adapter, options);
+    return this.getSyncEngine().sync(table, adapter, this.withModelColumns(table, options));
+  }
+
+  /**
+   * Merge any declared `static columns` from the registered model into the
+   * SyncOptions passed to the engine. Caller-supplied columns take precedence.
+   */
+  private withModelColumns(table: string, options?: SyncOptions): SyncOptions {
+    const opts: SyncOptions = { ...(options || {}) };
+    if (!opts.columns) {
+      const model = this.models.get(table);
+      const declared = model?.getColumnDefs?.();
+      if (declared && declared.length > 0) opts.columns = declared;
+    }
+    return opts;
   }
 
   /**
@@ -242,7 +256,11 @@ export class Database {
       await Promise.all(
         tables.map(async (table) => {
           try {
-            const result = await engine.sync(table, this.autoSyncAdapter!, this.autoSyncOpts.syncOptions);
+            const result = await engine.sync(
+              table,
+              this.autoSyncAdapter!,
+              this.withModelColumns(table, this.autoSyncOpts.syncOptions)
+            );
             this.autoSyncOpts.onSync?.(table, result);
           } catch (err) {
             this.autoSyncOpts.onError?.(table, err instanceof Error ? err : new Error(String(err)));

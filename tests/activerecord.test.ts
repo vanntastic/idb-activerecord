@@ -185,6 +185,55 @@ describe('ActiveRecord', () => {
     });
   });
 
+  describe('getColumnDefs', () => {
+    it('returns null when no columns are declared', () => {
+      class NoSchema extends ActiveRecord<any> {
+        static tableName = 'no_schema';
+      }
+      expect(NoSchema.getColumnDefs()).toBeNull();
+    });
+
+    it('normalizes declared columns into ColumnDef array with defaults', () => {
+      class Task extends ActiveRecord<any> {
+        static tableName = 'tasks';
+        static columns = {
+          title: { type: 'string', nullable: false },
+          priority: { type: 'integer', default: 0 },
+          done: {} // type defaults to 'string', nullable defaults to true
+        };
+      }
+      const cols = Task.getColumnDefs()!;
+      expect(cols).toHaveLength(3);
+
+      const title = cols.find(c => c.name === 'title')!;
+      expect(title.type).toBe('string');
+      expect(title.nullable).toBe(false);
+
+      const priority = cols.find(c => c.name === 'priority')!;
+      expect(priority.type).toBe('integer');
+      expect(priority.default).toBe(0);
+      expect(priority.nullable).toBe(true);
+
+      const done = cols.find(c => c.name === 'done')!;
+      expect(done.type).toBe('string');
+      expect(done.nullable).toBe(true);
+      expect(done.default).toBeUndefined();
+    });
+
+    it('preserves primaryKey and autoIncrement flags', () => {
+      class Custom extends ActiveRecord<any> {
+        static tableName = 'custom';
+        static columns = {
+          uuid: { type: 'string', primaryKey: true, nullable: false },
+          seq: { type: 'integer', autoIncrement: true }
+        };
+      }
+      const cols = Custom.getColumnDefs()!;
+      expect(cols.find(c => c.name === 'uuid')!.primaryKey).toBe(true);
+      expect(cols.find(c => c.name === 'seq')!.autoIncrement).toBe(true);
+    });
+  });
+
   describe('change listener (auto-sync hook)', () => {
     afterEach(() => {
       ActiveRecord.setChangeListener(null);

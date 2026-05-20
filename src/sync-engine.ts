@@ -45,6 +45,12 @@ export interface SyncOptions {
   strategy?: ConflictStrategy;
   batchSize?: number;
   onProgress?: (message: string) => void;
+  /**
+   * Explicit user-column schema. When provided, used as the source of truth
+   * (merged with sync meta columns) and passed to adapter.ensureTable().
+   * If omitted, columns are inferred from pending records.
+   */
+  columns?: ColumnDef[];
 }
 
 export class SyncEngine {
@@ -216,9 +222,16 @@ export class SyncEngine {
       return result;
     }
 
-    // 1. Ensure the remote table exists with full schema (sync meta + user columns)
-    const pendingForSchema = await this.getPendingChanges(table);
-    const userColumns = this.deriveColumns(pendingForSchema.map(c => c.data));
+    // 1. Ensure the remote table exists with full schema (sync meta + user columns).
+    //    If `options.columns` is provided, it is the strict source of truth — no
+    //    inferred columns are added. Otherwise we infer columns from pending records.
+    let userColumns: ColumnDef[];
+    if (options.columns && options.columns.length > 0) {
+      userColumns = options.columns;
+    } else {
+      const pendingForSchema = await this.getPendingChanges(table);
+      userColumns = this.deriveColumns(pendingForSchema.map(c => c.data));
+    }
     await adapter.ensureTable(table, [...SYNC_META_COLUMNS, ...userColumns]);
 
     // 2. Push local pending changes

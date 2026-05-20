@@ -10,6 +10,11 @@ class Task extends ActiveRecord {
   static enableSync = true;
   static softDelete = true;
 
+  static columns = {
+    title: { type: 'string', nullable: false },
+    status: { type: 'string', default: 'pending' }
+  };
+
   static indexes = [
     { name: 'status_index', keyPath: 'status' }
   ];
@@ -24,6 +29,11 @@ class Note extends ActiveRecord {
   static enableSync = true;
   static softDelete = true;
 
+  static columns = {
+    content: { type: 'string', nullable: false },
+    pinned: { type: 'boolean', default: false }
+  };
+
   static indexes = [
     { name: 'pinned_index', keyPath: 'pinned' }
   ];
@@ -37,6 +47,11 @@ class Label extends ActiveRecord {
   static tableName = 'labels';
   static enableSync = true;
   static softDelete = true;
+
+  static columns = {
+    name: { type: 'string', nullable: false },
+    color: { type: 'string', default: '#999' }
+  };
 
   static validates = {
     name: { presence: true, length: { minimum: 1 } }
