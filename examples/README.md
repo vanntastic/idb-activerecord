@@ -18,6 +18,7 @@ Then open your browser to: http://localhost:8080
 |---------|------|-------------|
 | **Basic CRUD** | `/examples/basic-crud/` | Full CRUD demo with users, queries, validation, and statistics |
 | **REST Sync** | `/examples/rest-sync/` | Sync local IndexedDB with a mock REST API using `RestAdapter` |
+| **Turso Sync** | `/examples/turso-sync/` | Same browser demo as REST Sync, but synced to a real remote **Turso** database via a Node proxy. Configure `.env`, then `npm run example:turso-api`. |
 
 ## Basic CRUD
 
@@ -38,3 +39,29 @@ Demonstrates the Sync Adapter API with a real Node.js REST API backed by SQLite.
 - **Real Persistence**: Tasks survive across browser refreshes and server restarts
 
 `npm run example` automatically starts both the static file server and the SQLite-backed REST API. Then open `/examples/rest-sync/`. See [`rest-sync/README.md`](./rest-sync/README.md) for details.
+
+## Turso Sync
+
+The same browser demo as REST Sync — tasks, notes, labels, multi-user switching, soft deletes, conflict resolution — except the data syncs to a **real remote Turso (libSQL) database** instead of a local SQLite file.
+
+Architecture:
+
+```
+browser (IndexedDB) ──HTTP──> proxy server ──libSQL──> Turso Cloud
+                                  └─ uses TursoAdapter internally
+```
+
+### Setup
+
+1. Copy `examples/turso-sync/.env.example` to `examples/turso-sync/.env` and fill in your Turso URL + auth token (get one at <https://turso.tech>).
+2. `npm run build` (the demo imports from `dist/`).
+
+### Run
+
+```bash
+npm run example:turso
+```
+
+This starts both the static file server (port 8080) and the Turso proxy server
+(port 3002) in parallel. Open <http://localhost:8080/examples/turso-sync/>.
+
