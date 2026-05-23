@@ -548,8 +548,39 @@ See [`examples/rest-sync`](./examples/rest-sync) for a runnable multi-user demo 
 | Adapter | Description | Status |
 |---------|-------------|--------|
 | `RestAdapter` | Generic REST API sync | ✅ Ready |
-| `TursoAdapter` | Turso (SQLite edge) | 🚧 Planned |
-| `SupabaseAdapter` | Supabase (PostgreSQL) | 🚧 TBD |
+| `TursoAdapter` | Turso / libSQL / SQLite (direct client) | ✅ Ready |
+
+#### TursoAdapter
+
+`TursoAdapter` syncs directly to a Turso/libSQL/SQLite database via a prepared-statement client. Bring your own client (e.g. `@tursodatabase/database`, `@libsql/client`, or `better-sqlite3`):
+
+```typescript
+import { connect } from '@tursodatabase/database';
+import { Database, ActiveRecord, TursoAdapter } from 'idb-activerecord';
+
+class Task extends ActiveRecord {
+  static tableName = 'tasks';
+  static enableSync = true;
+  static columns = {
+    title:  { type: 'string', nullable: false },
+    status: { type: 'string', default: 'pending' }
+  };
+}
+
+const db = new Database('my-app');
+db.registerModel(Task);
+await db.connect();
+
+// Bring your own Turso client
+const client = await connect('libsql://my-db.turso.io', { authToken: '...' });
+
+const adapter = new TursoAdapter();
+await adapter.connect({ client });
+
+db.enableAutoSync(adapter, { debounceMs: 500, pollIntervalMs: 5000 });
+```
+
+The adapter handles `CREATE TABLE IF NOT EXISTS` provisioning, `ALTER TABLE ADD COLUMN` for new fields, version-based optimistic concurrency, and tombstone propagation via the `deleted_at` column. It maps the SyncEngine wire fields `_version` / `_deletedAt` to the SQL columns `version` / `deleted_at`.
 
 ### Low-level usage
 

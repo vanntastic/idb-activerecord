@@ -34,3 +34,9 @@ export type { SyncMeta, SyncChange, SyncOptions } from './sync-engine.js';
 // Built-in Adapters
 export { RestAdapter } from './adapters/rest-adapter.js';
 export type { RestAdapterConfig } from './adapters/rest-adapter.js';
+export { TursoAdapter } from './adapters/turso-adapter.js';
+export type {
+  TursoAdapterConfig,
+  TursoClient,
+  TursoStatement
+} from './adapters/turso-adapter.js';

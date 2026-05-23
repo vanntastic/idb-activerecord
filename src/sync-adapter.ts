@@ -7,7 +7,12 @@ import { ActiveRecord } from './activerecord.js';
  * Configuration options for connecting to a sync adapter
  */
 export interface AdapterConfig {
-  url: string;
+  /**
+   * Optional connection URL. Required by network adapters like `RestAdapter`,
+   * not used by client-injected adapters like `TursoAdapter` (which carry the
+   * connection in a pre-built client instance).
+   */
+  url?: string;
   authToken?: string;
   apiKey?: string;
   headers?: Record<string, string>;
