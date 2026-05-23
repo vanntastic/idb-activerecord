@@ -6,7 +6,7 @@ remote **Turso (libSQL) database** via a tiny Node proxy that uses
 
 ```
 browser (IndexedDB) ──HTTP──> server.js ──libSQL──> Turso Cloud
-                                  └─ uses TursoAdapter to talk to libSQL
+     └─ TursoAdapter (HTTP mode)  └─ TursoAdapter (direct client mode)
 ```
 
 ## Setup
@@ -47,24 +47,23 @@ them propagate to and from your Turso database in real time.
 
 | File | Purpose |
 |------|---------|
-| `server.js` | Node HTTP proxy: REST endpoints → `@libsql/client` → Turso. Passes raw libsql client to `TursoAdapter`. |
+| `server.js` | Node HTTP proxy: REST endpoints → `@libsql/client` → Turso. Uses `TursoAdapter` with a raw libsql client. |
 | `app.js` | Browser app (clone of `rest-sync/app.js`, only `API_URL` and IDB DB name changed). |
 | `index.html` | Browser UI (clone of `rest-sync/index.html`). |
 | `.env.example` | Template for `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`. |
 
 ## Architecture notes
 
+- **Unified API:** Both client and server use `TursoAdapter`. The client uses HTTP
+  mode (`url`/`endpointPattern`) to talk to the proxy, while the server uses
+  direct client mode with a raw `@libsql/client` instance. Same adapter, different
+  transport.
 - **Why the proxy?** `@libsql/client` works in the browser, but bundling it
   here would require a build step and shipping the auth token to clients.
-  Tiny proxy = clean separation, server-held credentials, and an
-  illustration of `TursoAdapter` running in a Node service.
-- **Why `RestAdapter` in the browser?** The proxy speaks the same wire
-  protocol as `examples/rest-sync/server.js`. The browser code is essentially
-  unchanged from rest-sync — only the URL differs.
-- **Why `TursoAdapter` on the server?** Dogfooding. Every storage operation
-  in `server.js` (`ensureTable`, `pull`, `push`) is delegated to the same
-  adapter you'd use elsewhere. The server passes a raw `@libsql/client`
-  instance directly — no shimming needed.
+  Tiny proxy = clean separation, server-held credentials.
+- **Dogfooding:** Every storage operation in `server.js` (`ensureTable`, `pull`, `push`)
+  is delegated to the same `TursoAdapter` you'd use elsewhere. The server passes
+  a raw `@libsql/client` instance directly — no shimming needed.
 
 ## API endpoints (mirrors rest-sync)
 

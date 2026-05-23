@@ -161,9 +161,9 @@ describe('TursoAdapter', () => {
       expect(adapter).toBeInstanceOf(BaseAdapter);
     });
 
-    it('throws if no client is provided', async () => {
+    it('throws if no client or url is provided', async () => {
       const bare = new TursoAdapter();
-      await expect(bare.connect({} as any)).rejects.toThrow(/requires a connected client/i);
+      await expect(bare.connect({} as any)).rejects.toThrow(/requires either a `url` for HTTP mode or a `client`/i);
     });
 
     it('reports IDLE status after connect', () => {

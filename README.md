@@ -552,7 +552,9 @@ See [`examples/rest-sync`](./examples/rest-sync) for a runnable multi-user demo 
 
 #### TursoAdapter
 
-`TursoAdapter` syncs directly to a Turso/libSQL/SQLite database. Pass a raw `@libsql/client` instance directly — the adapter handles the client shimming internally:
+`TursoAdapter` syncs directly to a Turso/libSQL/SQLite database. It supports two modes:
+
+**Direct client mode (server-side):** Pass a raw `@libsql/client` instance — the adapter handles shimming internally:
 
 ```typescript
 import { createClient } from '@libsql/client';
@@ -571,11 +573,29 @@ const db = new Database('my-app');
 db.registerModel(Task);
 await db.connect();
 
-// Pass a raw @libsql/client instance
+// Direct client mode (server-side)
 const client = createClient({ url: 'libsql://my-db.turso.io', authToken: '...' });
-
 const adapter = new TursoAdapter();
 await adapter.connect({ client });
+
+db.enableAutoSync(adapter, { debounceMs: 500, pollIntervalMs: 5000 });
+```
+
+**HTTP mode (client-side):** Use the same `url`/`endpointPattern` config as `RestAdapter` to talk to a proxy server:
+
+```typescript
+import { Database, ActiveRecord, TursoAdapter } from 'idb-activerecord';
+
+const db = new Database('my-app');
+db.registerModel(Task);
+await db.connect();
+
+// HTTP mode (client-side) - same API as RestAdapter
+const adapter = new TursoAdapter();
+await adapter.connect({
+  url: 'http://localhost:3002',
+  endpointPattern: '/{table}'
+});
 
 db.enableAutoSync(adapter, { debounceMs: 500, pollIntervalMs: 5000 });
 ```

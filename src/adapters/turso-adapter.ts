@@ -51,8 +51,20 @@ export interface TursoAdapterConfig extends AdapterConfig {
    * A connected Turso/libSQL/SQLite client.
    * Pass a raw `@libsql/client` instance directly, or a custom client matching
    * the `TursoClient` interface for other drivers.
+   *
+   * If not provided, the adapter runs in HTTP mode and expects `url` to be set.
    */
-  client: LibsqlClient | TursoClient;
+  client?: LibsqlClient | TursoClient;
+  /**
+   * Base URL for HTTP mode (e.g., 'http://localhost:3002').
+   * If provided, the adapter makes HTTP requests instead of using a direct client.
+   */
+  url?: string;
+  /**
+   * Endpoint pattern for HTTP mode (e.g., '/{table}').
+   * Replaces '{table}' with the actual table name.
+   */
+  endpointPattern?: string;
   /** Default owner_id when a record doesn't carry one (defaults to 'demo'). */
   defaultOwnerId?: string;
 }
@@ -81,17 +93,35 @@ const META_COLS = new Set(['id', 'updatedAt', 'version', 'deleted_at', 'owner_id
  * ```
  */
 export class TursoAdapter extends BaseAdapter {
-  private client!: TursoClient;
+  private client?: TursoClient;
   private rawClient?: LibsqlClient;
+  private httpUrl?: string;
+  private httpEndpointPattern?: string;
+  private useHttp = false;
 
   async connect(config: TursoAdapterConfig): Promise<void> {
-    if (!config || !config.client) {
+    if (!config) {
+      throw new Error('TursoAdapter.connect() requires a config object.');
+    }
+    this.config = config;
+
+    // HTTP mode: use url/endpointPattern to make HTTP requests
+    if (config.url) {
+      this.httpUrl = config.url;
+      this.httpEndpointPattern = config.endpointPattern ?? '/{table}';
+      this.useHttp = true;
+      this.connected = true;
+      this.updateState({ status: SyncStatus.IDLE });
+      return;
+    }
+
+    // Direct client mode: use a database client
+    if (!config.client) {
       throw new Error(
-        'TursoAdapter.connect() requires a connected client (config.client). ' +
+        'TursoAdapter.connect() requires either a `url` for HTTP mode or a `client` for direct mode. ' +
         'Create one with `createClient(...)` from @libsql/client or your Turso/libSQL driver first.'
       );
     }
-    this.config = config;
 
     // Detect if the client is already a TursoClient-compatible instance (has prepare).
     // If not, assume it's a raw @libsql/client and shim it.
@@ -129,6 +159,22 @@ export class TursoAdapter extends BaseAdapter {
     this.requireConnected();
     if (columns.length === 0) return;
 
+    if (this.useHttp) {
+      // HTTP mode: POST /schema to create/alter table
+      const url = this.httpUrl! + '/schema';
+      const body = JSON.stringify({ name: table, columns });
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body
+      });
+      if (!res.ok) {
+        const err = await res.text();
+        throw new Error(`Failed to ensure table: ${err}`);
+      }
+      return;
+    }
+
     const existing = await this.queryAll<{ name: string }>(
       `SELECT name FROM sqlite_master WHERE type='table' AND name = ?`,
       [table]
@@ -158,6 +204,31 @@ export class TursoAdapter extends BaseAdapter {
     this.updateState({ status: SyncStatus.SYNCING });
 
     try {
+      if (this.useHttp) {
+        // HTTP mode: GET /:table with query params
+        const endpoint = this.httpEndpointPattern!.replace('{table}', query.table);
+        const url = new URL(endpoint, this.httpUrl);
+        if (query.since) url.searchParams.set('since', query.since.toISOString());
+        if (query.where) {
+          for (const [k, v] of Object.entries(query.where)) {
+            url.searchParams.set(k, String(v));
+          }
+        }
+        if (!query.includeDeleted) url.searchParams.set('includeDeleted', 'false');
+        if (query.limit) url.searchParams.set('limit', String(query.limit));
+        if (query.offset) url.searchParams.set('offset', String(query.offset));
+
+        const res = await fetch(url.toString());
+        if (!res.ok) {
+          const err = await res.text();
+          throw new Error(`Pull failed: ${err}`);
+        }
+        const rows = await res.json();
+
+        this.updateState({ lastPullAt: new Date(), status: SyncStatus.IDLE });
+        return rows as T[];
+      }
+
       const conditions: string[] = [];
       const params: unknown[] = [];
 
@@ -213,9 +284,6 @@ export class TursoAdapter extends BaseAdapter {
     if (records.length === 0) return result;
 
     this.updateState({ status: SyncStatus.SYNCING });
-    const now = new Date().toISOString();
-    const defaultOwnerId =
-      (this.config as TursoAdapterConfig).defaultOwnerId ?? 'demo';
 
     try {
       const first = records[0]!;
@@ -224,6 +292,36 @@ export class TursoAdapter extends BaseAdapter {
         options.table ||
         (RecordClass as unknown as { tableName?: string }).tableName;
       if (!table) throw new Error('Cannot push records without tableName');
+
+      if (this.useHttp) {
+        // HTTP mode: POST /:table with records
+        const endpoint = this.httpEndpointPattern!.replace('{table}', table);
+        const url = this.httpUrl! + endpoint;
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(records)
+        });
+        if (!res.ok) {
+          const err = await res.text();
+          throw new Error(`Push failed: ${err}`);
+        }
+        const pushResult = await res.json();
+        result.pushed = pushResult.pushed ?? records.length;
+        result.conflicts = pushResult.conflicts ?? 0;
+        result.errors = pushResult.errors ?? [];
+
+        this.updateState({
+          lastPushAt: new Date(),
+          pendingOperations: 0,
+          status: SyncStatus.IDLE
+        });
+        return result;
+      }
+
+      const now = new Date().toISOString();
+      const defaultOwnerId =
+        (this.config as TursoAdapterConfig).defaultOwnerId ?? 'demo';
 
       // Discover user columns from PRAGMA so we only write columns that exist.
       const info = await this.queryAll<{ name: string }>(
@@ -321,6 +419,18 @@ export class TursoAdapter extends BaseAdapter {
 
   async getRemoteSchema(table: string): Promise<TableSchema> {
     this.requireConnected();
+
+    if (this.useHttp) {
+      // HTTP mode: GET /schema/:table
+      const url = this.httpUrl! + `/schema/${table}`;
+      const res = await fetch(url);
+      if (!res.ok) {
+        const err = await res.text();
+        throw new Error(`Failed to get schema: ${err}`);
+      }
+      return await res.json();
+    }
+
     const rows = await this.queryAll<{
       name: string;
       type: string;
@@ -358,7 +468,10 @@ export class TursoAdapter extends BaseAdapter {
   }
 
   private async exec(sql: string, params: unknown[] = []): Promise<void> {
-    const stmt = this.client.prepare(sql);
+    if (this.useHttp) {
+      throw new Error('exec() is not supported in HTTP mode. Use the adapter methods directly.');
+    }
+    const stmt = this.client!.prepare(sql);
     await Promise.resolve(stmt.run(...params));
   }
 
@@ -366,7 +479,10 @@ export class TursoAdapter extends BaseAdapter {
     sql: string,
     params: unknown[] = []
   ): Promise<R[]> {
-    const stmt = this.client.prepare(sql);
+    if (this.useHttp) {
+      throw new Error('queryAll() is not supported in HTTP mode. Use the adapter methods directly.');
+    }
+    const stmt = this.client!.prepare(sql);
     const rows = await Promise.resolve(stmt.all(...params));
     return rows as R[];
   }
