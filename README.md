@@ -431,82 +431,6 @@ if (!valid) {
 }
 ```
 
-## Sync Adapter (Experimental)
-
-Sync local IndexedDB data with remote databases using pluggable adapters.
-
-```typescript
-import { RestAdapter, BaseAdapter, ConflictStrategy } from 'idb-activerecord';
-
-const adapter = new RestAdapter();
-await adapter.connect({
-  url: 'https://api.example.com',
-  authToken: 'Bearer xyz'
-});
-
-// Pull remote changes
-const remoteUsers = await adapter.pull({ table: 'users', since: lastSync });
-
-// Push local changes
-const result = await adapter.push([user1, user2]);
-
-// Resolve conflicts
-const winner = await adapter.resolveConflict(localUser, remoteUser, ConflictStrategy.LAST_WRITE_WINS);
-```
-
-### Built-in Adapters
-
-| Adapter | Description | Status |
-|---------|-------------|--------|
-| `RestAdapter` | Generic REST API sync | ✅ Ready |
-| `TursoAdapter` | Turso (SQLite edge) | 🚧 Planned |
-| `SupabaseAdapter` | Supabase (PostgreSQL) | 🚧 TBD |
-
-Create custom adapters by extending `BaseAdapter`:
-
-```typescript
-import {
-  BaseAdapter,
-  AdapterConfig,
-  SyncQuery,
-  PushOptions,
-  SyncResult,
-  TableSchema,
-  SyncMigration,
-  ActiveRecord
-} from 'idb-activerecord';
-
-class MyAdapter extends BaseAdapter {
-  async connect(config: AdapterConfig): Promise<void> {
-    this.config = config;
-    this.connected = true;
-  }
-
-  async disconnect(): Promise<void> {
-    this.connected = false;
-  }
-
-  async pull<T extends ActiveRecord>(query: SyncQuery): Promise<T[]> {
-    // fetch records from your backend since query.since
-    return [];
-  }
-
-  async push<T extends ActiveRecord>(records: T[], options?: PushOptions): Promise<SyncResult> {
-    // send records to your backend
-    return { pushed: records.length, pulled: 0, conflicts: 0, errors: [], timestamp: new Date() };
-  }
-
-  async getRemoteSchema(table: string): Promise<TableSchema> {
-    // return column/index definitions for the table
-    return { name: table, columns: [], indexes: [] };
-  }
-
-  async applyMigration(migration: SyncMigration): Promise<void> {
-    // send migration intent to your backend (optional)
-  }
-}
-```
-
 ## Multi-User Sync
 
 For multi-user / multi-device scenarios, `idb-activerecord` handles change tracking, soft deletes, and version-based conflict resolution automatically.
@@ -614,6 +538,99 @@ await engine.clearSyncData('tasks');
 - **Conflict resolution** — newer `_version` wins; ties fall back to `updatedAt`; or use `ConflictStrategy.LOCAL_WINS` / `REMOTE_WINS` / `CUSTOM`
 
 See [`examples/rest-sync`](./examples/rest-sync) for a runnable multi-user demo with a SQLite backend.
+
+## Adapters
+
+> Most apps should use [`db.sync()`](#basic-usage) or [`db.enableAutoSync()`](#auto-sync) — they handle change tracking, version stamping, soft deletes, schema provisioning, and conflict resolution. The adapter API documented here is the lower-level building block, useful when you need to bypass the SyncEngine, build a custom adapter, or integrate with a non-standard backend.
+
+### Built-in adapters
+
+| Adapter | Description | Status |
+|---------|-------------|--------|
+| `RestAdapter` | Generic REST API sync | ✅ Ready |
+| `TursoAdapter` | Turso (SQLite edge) | 🚧 Planned |
+| `SupabaseAdapter` | Supabase (PostgreSQL) | 🚧 TBD |
+
+### Low-level usage
+
+If you need to call an adapter directly (instead of going through `SyncEngine`):
+
+```typescript
+import { RestAdapter, ConflictStrategy } from 'idb-activerecord';
+
+const adapter = new RestAdapter();
+await adapter.connect({
+  url: 'https://api.example.com',
+  authToken: 'Bearer xyz'
+});
+
+// Provision the remote table (idempotent — SyncEngine calls this for you)
+await adapter.ensureTable('tasks', Task.getColumnDefs() ?? []);
+
+// Pull remote changes since a cursor
+const remoteTasks = await adapter.pull<Task>({ table: 'tasks', since: lastSync });
+
+// Push ActiveRecord instances (must have a `tableName` — plain objects need `options.table`)
+const result = await adapter.push([task1, task2]);
+
+// Per-record conflict resolution
+const winner = await adapter.resolveConflict(localTask, remoteTask, ConflictStrategy.LAST_WRITE_WINS);
+```
+
+Note that calling `adapter.push()` directly **bypasses** the SyncEngine — no change-log entries are consumed, no `_version` is incremented, and no `updatedAt` is stamped. Use `db.sync()` if you want those guarantees.
+
+### Building a custom adapter
+
+Extend `BaseAdapter` and implement the abstract methods:
+
+```typescript
+import {
+  BaseAdapter,
+  AdapterConfig,
+  SyncQuery,
+  PushOptions,
+  SyncResult,
+  TableSchema,
+  SyncMigration,
+  ColumnDef,
+  ActiveRecord
+} from 'idb-activerecord';
+
+class MyAdapter extends BaseAdapter {
+  async connect(config: AdapterConfig): Promise<void> {
+    this.config = config;
+    this.connected = true;
+  }
+
+  async disconnect(): Promise<void> {
+    this.connected = false;
+  }
+
+  async pull<T extends ActiveRecord>(query: SyncQuery): Promise<T[]> {
+    // Fetch records from your backend. Honor query.since (cursor),
+    // query.where (filters), and query.includeDeleted (tombstones).
+    return [];
+  }
+
+  async push<T extends ActiveRecord>(records: T[], options?: PushOptions): Promise<SyncResult> {
+    // Send records to your backend. Use options?.table when records are plain objects.
+    return { pushed: records.length, pulled: 0, conflicts: 0, errors: [], timestamp: new Date() };
+  }
+
+  async ensureTable(table: string, columns?: ColumnDef[]): Promise<void> {
+    // Create or migrate the remote table to match `columns`.
+    // SyncEngine calls this before every push/pull cycle.
+  }
+
+  async getRemoteSchema(table: string): Promise<TableSchema> {
+    return { name: table, columns: [], indexes: [] };
+  }
+
+  async applyMigration(migration: SyncMigration): Promise<void> {
+    // Optional — forward migration intent to your backend.
+  }
+}
+```
 
 ## Browser Support
 
