@@ -50,8 +50,11 @@ export class Database {
         resolve(needed ? current + 1 : current);
       };
       probe.onupgradeneeded = (event) => {
+        // Database doesn't exist yet — close and resolve to 1, but we need
+        // to force an upgrade so connect() will trigger onupgradeneeded.
+        // We do this by setting version to 1 + 1 = 2 for a fresh database.
         (event.target as IDBOpenDBRequest).result.close();
-        resolve(1);
+        resolve(2); // Force upgrade to version 2
       };
     });
   }
