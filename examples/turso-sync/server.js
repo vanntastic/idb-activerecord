@@ -17,7 +17,7 @@
 //
 // Run:
 //   cp examples/turso-sync/.env.example examples/turso-sync/.env  (fill in)
-//   npm run example:turso-api
+//   npm run example:turso
 
 import http from 'node:http';
 import { createClient } from '@libsql/client';
@@ -30,47 +30,18 @@ const TURSO_TOKEN = process.env.TURSO_AUTH_TOKEN;
 if (!TURSO_URL) {
   console.error('\n❌ TURSO_DATABASE_URL is not set.');
   console.error('   Copy examples/turso-sync/.env.example to .env and fill in your credentials,');
-  console.error('   then run with `npm run example:turso-api`.\n');
+  console.error('   then run with `npm run example:turso`.\n');
   process.exit(1);
 }
 
 // ---------------------------------------------------------------------------
-// libSQL client → TursoClient shim
+// Connect to Turso using the raw @libsql/client.
+// TursoAdapter automatically shims it to the internal interface.
 // ---------------------------------------------------------------------------
-// `@libsql/client` exposes `client.execute({ sql, args })`. Our `TursoAdapter`
-// expects a `prepare(sql).run(...args)` / `.all(...args)` shape. Wrap it.
 
-const libsqlClient = createClient({ url: TURSO_URL, authToken: TURSO_TOKEN });
-
-const tursoClient = {
-  prepare(sql) {
-    return {
-      async run(...args) {
-        const result = await libsqlClient.execute({ sql, args });
-        return {
-          changes: result.rowsAffected,
-          lastInsertRowid: result.lastInsertRowid
-        };
-      },
-      async all(...args) {
-        const result = await libsqlClient.execute({ sql, args });
-        // libSQL returns rows as plain objects keyed by column name. Drop the
-        // numeric-indexed entries so JSON.stringify yields clean output.
-        return result.rows.map((row) => {
-          const obj = {};
-          for (const col of result.columns) obj[col] = row[col];
-          return obj;
-        });
-      }
-    };
-  },
-  async close() {
-    libsqlClient.close();
-  }
-};
-
+const client = createClient({ url: TURSO_URL, authToken: TURSO_TOKEN });
 const adapter = new TursoAdapter();
-await adapter.connect({ client: tursoClient });
+await adapter.connect({ client });
 console.log(`📦 Connected to Turso: ${TURSO_URL}`);
 
 // ---------------------------------------------------------------------------
@@ -211,7 +182,7 @@ async function handleRequest(req, res) {
     const [, table, idStr] = itemMatch;
     const now = new Date().toISOString();
     try {
-      await libsqlClient.execute({
+      await client.execute({
         sql: `UPDATE "${table}" SET deleted_at = ?, updatedAt = ?, version = version + 1 WHERE id = ?`,
         args: [now, now, Number(idStr)]
       });

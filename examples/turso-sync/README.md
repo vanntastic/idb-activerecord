@@ -13,7 +13,7 @@ browser (IndexedDB) ──HTTP──> server.js ──libSQL──> Turso Cloud
 
 1. **Install deps** (already pulled in by `npm install`):
 
-   - `@libsql/client` — connects to `libsql://...` Turso URLs
+   - `@libsql/client` — connects to `libsql://...` Turso URLs (bundled with idb-activerecord)
 
 2. **Add credentials.** Copy the example env file and fill in your Turso URL +
    auth token:
@@ -47,7 +47,7 @@ them propagate to and from your Turso database in real time.
 
 | File | Purpose |
 |------|---------|
-| `server.js` | Node HTTP proxy: REST endpoints → `@libsql/client` → Turso. Uses `TursoAdapter` for storage. |
+| `server.js` | Node HTTP proxy: REST endpoints → `@libsql/client` → Turso. Passes raw libsql client to `TursoAdapter`. |
 | `app.js` | Browser app (clone of `rest-sync/app.js`, only `API_URL` and IDB DB name changed). |
 | `index.html` | Browser UI (clone of `rest-sync/index.html`). |
 | `.env.example` | Template for `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`. |
@@ -63,7 +63,8 @@ them propagate to and from your Turso database in real time.
   unchanged from rest-sync — only the URL differs.
 - **Why `TursoAdapter` on the server?** Dogfooding. Every storage operation
   in `server.js` (`ensureTable`, `pull`, `push`) is delegated to the same
-  adapter you'd use elsewhere.
+  adapter you'd use elsewhere. The server passes a raw `@libsql/client`
+  instance directly — no shimming needed.
 
 ## API endpoints (mirrors rest-sync)
 

@@ -1,10 +1,8 @@
 // Turso (libSQL / SQLite) Sync Adapter
-// Talks directly to a Turso/libSQL/SQLite database via a prepared-statement
-// client (e.g. `@tursodatabase/database`, `@libsql/client`, `better-sqlite3`).
+// Talks directly to a Turso/libSQL/SQLite database.
 //
-// The user is responsible for providing a connected client via `connect({ client })`.
-// This keeps the adapter dependency-free and lets the caller pick the runtime
-// (Node, browser WASM, edge) appropriate for their app.
+// Accepts a raw `@libsql/client` instance directly, or a custom client matching
+// the `TursoClient` interface for other drivers (e.g. `@tursodatabase/database`).
 
 import {
   BaseAdapter,
@@ -22,7 +20,7 @@ import { ActiveRecord } from '../activerecord.js';
 /**
  * Minimal subset of the `@tursodatabase/database` client API this adapter uses.
  * Compatible with any driver exposing prepared statements with `.run()` and
- * `.all()` methods (sync or async).
+ * `.all()` methods (sync or async). Used for custom clients.
  */
 export interface TursoClient {
   prepare(sql: string): TursoStatement;
@@ -34,9 +32,27 @@ export interface TursoStatement {
   all(...args: unknown[]): unknown[] | Promise<unknown[]>;
 }
 
+/**
+ * Raw `@libsql/client` interface for type detection.
+ * Only the methods we need are declared.
+ */
+interface LibsqlClient {
+  execute(options: { sql: string; args?: unknown[] }): Promise<{
+    rows: unknown[];
+    rowsAffected: number;
+    lastInsertRowid?: number;
+    columns: string[];
+  }>;
+  close(): void;
+}
+
 export interface TursoAdapterConfig extends AdapterConfig {
-  /** A connected Turso/libSQL/SQLite client. Required. */
-  client: TursoClient;
+  /**
+   * A connected Turso/libSQL/SQLite client.
+   * Pass a raw `@libsql/client` instance directly, or a custom client matching
+   * the `TursoClient` interface for other drivers.
+   */
+  client: LibsqlClient | TursoClient;
   /** Default owner_id when a record doesn't carry one (defaults to 'demo'). */
   defaultOwnerId?: string;
 }
@@ -54,10 +70,10 @@ const META_COLS = new Set(['id', 'updatedAt', 'version', 'deleted_at', 'owner_id
  *
  * @example
  * ```ts
- * import { connect } from '@tursodatabase/database';
+ * import { createClient } from '@libsql/client';
  * import { TursoAdapter } from 'idb-activerecord';
  *
- * const client = await connect('libsql://my-db.turso.io', { authToken });
+ * const client = createClient({ url: 'libsql://my-db.turso.io', authToken });
  * const adapter = new TursoAdapter();
  * await adapter.connect({ client });
  *
@@ -66,22 +82,38 @@ const META_COLS = new Set(['id', 'updatedAt', 'version', 'deleted_at', 'owner_id
  */
 export class TursoAdapter extends BaseAdapter {
   private client!: TursoClient;
+  private rawClient?: LibsqlClient;
 
   async connect(config: TursoAdapterConfig): Promise<void> {
     if (!config || !config.client) {
       throw new Error(
         'TursoAdapter.connect() requires a connected client (config.client). ' +
-        'Create one with `await connect(...)` from your Turso/libSQL driver first.'
+        'Create one with `createClient(...)` from @libsql/client or your Turso/libSQL driver first.'
       );
     }
     this.config = config;
-    this.client = config.client;
+
+    // Detect if the client is already a TursoClient-compatible instance (has prepare).
+    // If not, assume it's a raw @libsql/client and shim it.
+    const raw = config.client as LibsqlClient;
+    if (typeof (config.client as TursoClient).prepare === 'function') {
+      // Already a TursoClient-compatible instance
+      this.client = config.client as TursoClient;
+    } else {
+      // Raw @libsql/client — shim to TursoClient interface
+      this.rawClient = raw;
+      this.client = this.shimLibsqlClient(raw);
+    }
+
     this.connected = true;
     this.updateState({ status: SyncStatus.IDLE });
   }
 
   async disconnect(): Promise<void> {
-    if (this.client && this.client.close) {
+    // Close the raw libsql client if we have one (it has its own close method)
+    if (this.rawClient) {
+      this.rawClient.close();
+    } else if (this.client && this.client.close) {
       await this.client.close();
     }
     this.connected = false;
@@ -399,5 +431,40 @@ export class TursoAdapter extends BaseAdapter {
     if (typeof v === 'boolean') return v ? 1 : 0;
     if (v instanceof Date) return v.toISOString();
     return v;
+  }
+
+  /**
+   * Shim a raw `@libsql/client` instance to the TursoClient interface.
+   * @libsql/client uses `execute({ sql, args })` while TursoClient expects
+   * `prepare(sql).run(...args)` / `.all(...args)`.
+   */
+  private shimLibsqlClient(client: LibsqlClient): TursoClient {
+    return {
+      prepare(sql: string): TursoStatement {
+        return {
+          async run(...args: unknown[]) {
+            const result = await client.execute({ sql, args });
+            return {
+              changes: result.rowsAffected,
+              lastInsertRowid: result.lastInsertRowid
+            };
+          },
+          async all(...args: unknown[]) {
+            const result = await client.execute({ sql, args });
+            // libSQL returns rows as plain objects keyed by column name. Drop the
+            // numeric-indexed entries so JSON.stringify yields clean output.
+            return result.rows.map((row: unknown) => {
+              const obj: Record<string, unknown> = {};
+              const rowObj = row as Record<string, unknown>;
+              for (const col of result.columns) obj[col] = rowObj[col];
+              return obj;
+            });
+          }
+        };
+      },
+      close(): void {
+        client.close();
+      }
+    };
   }
 }
