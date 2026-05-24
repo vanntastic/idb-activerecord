@@ -99,6 +99,7 @@ When adding new features, add corresponding unit tests. Do not delete or weaken 
 - Static class properties are used for model configuration (`tableName`, `indexes`, `validates`, `beforeCreate`, etc.)
 - Instance creation uses `Object.create(this.prototype)` rather than `new this()` to avoid generic TypeScript issues
 - Do not add comments or documentation unless explicitly asked
+- **Never commit secrets** - API keys, tokens, passwords, or credentials. Use environment variables and `.env.example` templates. The `.gitignore` already excludes `.env` files.
 - **Before committing**, run `npx tsc --noEmit --noUnusedLocals --noUnusedParameters` and fix any reported unused variables or parameters. Do not leave unused imports or locals in committed code.
 
 ## Commit Messages
