@@ -1,8 +1,8 @@
-# IDB ActiveRecord Browser Demo
+# IDB ActiveRecord Examples
 
-This folder contains a browser-based demo of the IDB ActiveRecord library.
+Browser-based demos of the IDB ActiveRecord library.
 
-## Running the Demo
+## Running
 
 Start the example server:
 
@@ -12,31 +12,56 @@ npm run example
 
 Then open your browser to: http://localhost:8080
 
-## Features Demonstrated
+## Available Examples
 
-The demo showcases all major features of the library:
+| Example | Path | Description |
+|---------|------|-------------|
+| **Basic CRUD** | `/examples/basic-crud/` | Full CRUD demo with users, queries, validation, and statistics |
+| **SQLite Sync** | `/examples/sqlite-sync/` | Sync local IndexedDB with a real SQLite database using `SQLiteAdapter` + `SyncServer` |
+| **Turso Sync** | `/examples/turso-sync/` | Same browser demo, but synced to a real remote **Turso** database via a Node proxy. Configure `.env`, then `npm run example:turso`. |
 
-- **Create Users**: Add new users with name, email, and age
-- **Find Users**: Look up users by ID
-- **Query Users**: Filter users by age or other criteria
-- **List All Users**: View all users in the database
-- **Update Users**: Modify user information
-- **Delete Users**: Remove users from the database
-- **Validation**: Demonstrates validation rules (presence, format, length)
-- **Statistics**: Real-time stats showing total users, adults, etc.
+## Basic CRUD
 
-## Technical Details
+Showcases all major library features:
 
-- The demo imports the library directly from source (`../src/index.js`)
-- Uses a simple Node.js HTTP server to serve static files
-- All data is stored in IndexedDB in the browser
-- No backend required - everything runs client-side
+- Create, read, update, delete users
+- Query with `where()`, `orderBy()`, `limit()`
+- Validation (presence, format, length)
+- Real-time statistics
 
-## Customization
+## REST Sync
 
-You can modify `app.js` to experiment with different features:
+Demonstrates the Sync Adapter API with a real Node.js REST API backed by SQLite.
 
-- Try relationships (hasOne, hasMany, belongsTo)
-- Test callbacks (beforeCreate, afterUpdate, etc.)
-- Experiment with query chaining
-- Add validation rules
+- **Push**: Send local tasks to a remote REST API (upserted in SQLite)
+- **Pull**: Fetch remote tasks into local IndexedDB
+- **Conflict Resolution**: `LAST_WRITE_WINS` strategy demo
+- **Real Persistence**: Tasks survive across browser refreshes and server restarts
+
+`npm run example` automatically starts both the static file server and the SQLite-backed API. Then open `/examples/sqlite-sync/`. See [`sqlite-sync/README.md`](./sqlite-sync/README.md) for details.
+
+## Turso Sync
+
+The same browser demo as REST Sync — tasks, notes, labels, multi-user switching, soft deletes, conflict resolution — except the data syncs to a **real remote Turso (libSQL) database** instead of a local SQLite file.
+
+Architecture:
+
+```
+browser (IndexedDB) ──HTTP──> proxy server ──libSQL──> Turso Cloud
+                                  └─ uses TursoAdapter internally
+```
+
+### Setup
+
+1. Copy `examples/turso-sync/.env.example` to `examples/turso-sync/.env` and fill in your Turso URL + auth token (get one at <https://turso.tech>).
+2. `npm run build` (the demo imports from `dist/`).
+
+### Run
+
+```bash
+npm run example:turso
+```
+
+This starts both the static file server (port 8080) and the Turso proxy server
+(port 3002) in parallel. Open <http://localhost:8080/examples/turso-sync/>.
+

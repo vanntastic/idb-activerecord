@@ -20,11 +20,14 @@ Guidelines for AI agents working in this repository.
 ```
 src/                    # Source files (TypeScript)
   index.ts              # Public API re-exports
-  activerecord.ts       # Base ActiveRecord class (CRUD, callbacks, validation, relationships)
-  database.ts           # Database connection and model registration
-  query-builder.ts      # Chainable query builder
+  activerecord.ts       # Base ActiveRecord class (CRUD, callbacks, validation, relationships, soft delete, sync hooks)
+  database.ts           # Database connection, model registration, sync stores
+  query-builder.ts      # Chainable query builder (auto-filters _deletedAt records)
   migration.ts          # Migration and TableBuilder classes
   types.ts              # Shared TypeScript interfaces (ModelConfig, ValidationRule)
+  sync-adapter.ts       # SyncAdapter interface, BaseAdapter, conflict resolution
+  sync-engine.ts        # Multi-user SyncEngine: change tracking, merge, tombstones
+  adapters/
 
 tests/                  # Unit tests
   activerecord.test.ts  # Validation, callbacks
@@ -33,6 +36,8 @@ tests/                  # Unit tests
   relationships.test.ts # hasOne, hasMany, belongsTo
   migration.test.ts     # TableBuilder
   transactions.test.ts  # beginTransaction
+  sync-adapter.test.ts  # BaseAdapter, TursoAdapter, conflict resolution
+  sync-engine.test.ts   # SyncEngine push/pull/merge, version conflicts, tombstones
   mocks/
     indexeddb.ts        # Mock IDBDatabase/IDBTransaction for tests
 
@@ -40,9 +45,18 @@ scripts/
   build-cdn.js          # esbuild script that produces dist/idb-activerecord[.min].js
 
 examples/
-  index.html            # Browser demo UI
-  app.js                # Demo consuming dist/index.js
-  server.js             # Simple Node.js HTTP server for the demo (serves from project root)
+  index.html            # Landing page linking to all examples
+  server.js             # Static file server (port 8080)
+  run-all.js            # Runs both static + sync API servers in parallel
+  basic-crud/           # Simple CRUD demo
+    index.html
+    app.js
+    README.md
+  sqlite-sync/          # Multi-user sync demo with SQLite backend
+    index.html
+    app.js
+    server.js           # SQLite-backed REST API (port 3001, uses node:sqlite)
+    README.md
 
 .github/workflows/
   ci.yml                # Runs tests on PRs to main
@@ -85,6 +99,8 @@ When adding new features, add corresponding unit tests. Do not delete or weaken 
 - Static class properties are used for model configuration (`tableName`, `indexes`, `validates`, `beforeCreate`, etc.)
 - Instance creation uses `Object.create(this.prototype)` rather than `new this()` to avoid generic TypeScript issues
 - Do not add comments or documentation unless explicitly asked
+- **Never commit secrets** - API keys, tokens, passwords, or credentials. Use environment variables and `.env.example` templates. The `.gitignore` already excludes `.env` files.
+- **Before committing**, run `npx tsc --noEmit --noUnusedLocals --noUnusedParameters` and fix any reported unused variables or parameters. Do not leave unused imports or locals in committed code.
 
 ## Commit Messages
 
@@ -129,7 +145,7 @@ BREAKING CHANGE: where(field, value) now requires explicit operator as second ar
 2. Export it from `src/index.ts` if it's part of the public API
 3. Add unit tests in `tests/`
 4. Update `README.md` if the public API changes
-5. Run `npm test -- --run` to confirm all 39+ tests pass
+5. Run `npm test -- --run` to confirm all 60+ tests pass
 6. Run `npm run build` to confirm the build succeeds
 
 ## Publishing

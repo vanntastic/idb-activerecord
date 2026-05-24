@@ -62,6 +62,12 @@ export class MockIDBObjectStore implements IDBObjectStore {
       let id = key;
       if (this.autoIncrement && !id) {
         id = this.nextId++;
+        // Persist nextId back to database-level store info
+        const db = (this.transaction as any).db;
+        if (db && db.stores) {
+          const info = db.stores.get(this.name);
+          if (info) info.nextId = this.nextId;
+        }
       }
       
       const record = { ...value };
@@ -97,6 +103,11 @@ export class MockIDBObjectStore implements IDBObjectStore {
       
       if (!id && this.autoIncrement) {
         id = this.nextId++;
+        const db = (this.transaction as any).db;
+        if (db && db.stores) {
+          const info = db.stores.get(this.name);
+          if (info) info.nextId = this.nextId;
+        }
       }
       
       const record = { ...value };
@@ -127,18 +138,60 @@ export class MockIDBObjectStore implements IDBObjectStore {
   }
 
   createIndex(name: string, keyPath: string | string[], options?: IDBIndexParameters): IDBIndex {
-    this.indexes.set(name, new Map());
+    if (!this.indexes.has(name)) {
+      this.indexes.set(name, new Map());
+    }
+    const self = this;
     return {
       name,
       keyPath,
       objectStore: this,
       unique: options?.unique || false,
-      multiEntry: options?.multiEntry || false
+      multiEntry: options?.multiEntry || false,
+      openCursor: () => new MockIDBRequest(null),
+      getAll: (query?: any) => {
+        const results: any[] = [];
+        self.data.forEach((record) => {
+          const val = (record as any)[keyPath as string];
+          if (val !== undefined) {
+            if (!query || val === query) {
+              results.push(record);
+            }
+          }
+        });
+        return new MockIDBRequest(results);
+      }
     } as any;
   }
 
   index(name: string): IDBIndex {
-    return this.createIndex(name, name);
+    const idx = this.indexes.get(name);
+    if (!idx) {
+      throw new DOMException(`Index ${name} not found`, 'NotFoundError');
+    }
+    // Return existing index without recreating
+    const self = this;
+    const keyPath = name; // simplified
+    return {
+      name,
+      keyPath,
+      objectStore: this,
+      unique: false,
+      multiEntry: false,
+      openCursor: () => new MockIDBRequest(null),
+      getAll: (query?: any) => {
+        const results: any[] = [];
+        self.data.forEach((record) => {
+          const val = (record as any)[keyPath as string];
+          if (val !== undefined) {
+            if (!query || val === query) {
+              results.push(record);
+            }
+          }
+        });
+        return new MockIDBRequest(results);
+      }
+    } as any;
   }
 
   deleteIndex(indexName: string): void {
@@ -197,18 +250,26 @@ export class MockIDBTransaction implements IDBTransaction {
       }
     } as any;
 
-    // Initialize stores from database
+    // Initialize stores from database, sharing the same data map
     storeNames.forEach(name => {
       const storeInfo = (db as any).stores.get(name);
       if (storeInfo) {
         const store = new MockIDBObjectStore(name, storeInfo.keyPath, storeInfo.autoIncrement, this);
+        // Share database-level data for persistence across transactions
+        (store as any).data = storeInfo.data || new Map();
+        (store as any).indexes = storeInfo.indexes || new Map();
+        (store as any).nextId = storeInfo.nextId || 1;
         this.stores.set(name, store);
-        // Copy existing data from database
-        if ((store as any).data) {
-          (store as any).data = new Map((db as any).stores.get(name)?.data || new Map());
-        }
       }
     });
+
+    // Auto-fire oncomplete on the next macrotask, after request callbacks
+    // (which are scheduled with setTimeout(0)) have had a chance to run.
+    setTimeout(() => {
+      if (!this.aborted) {
+        this.oncomplete?.call(this, new Event('complete'));
+      }
+    }, 5);
   }
 
   addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions): void {}
@@ -244,7 +305,7 @@ export class MockIDBDatabase implements IDBDatabase {
   onerror: ((this: IDBDatabase, ev: Event) => any) | null = null;
   onversionchange: ((this: IDBDatabase, ev: Event) => any) | null = null;
 
-  stores: Map<string, { keyPath: string; autoIncrement: boolean }> = new Map();
+  stores: Map<string, { keyPath: string; autoIncrement: boolean; nextId: number; data: Map<any, any>; indexes: Map<string, Map<any, Set<any>>> }> = new Map();
 
   constructor(name: string, version: number) {
     this.name = name;
@@ -271,13 +332,18 @@ export class MockIDBDatabase implements IDBDatabase {
     );
     this.stores.set(name, {
       keyPath: keyPath,
-      autoIncrement: options?.autoIncrement || false
+      autoIncrement: options?.autoIncrement || false,
+      nextId: (store as any).nextId,
+      data: (store as any).data,
+      indexes: (store as any).indexes
     });
+    (this.objectStoreNames as any).length = this.stores.size;
     return store;
   }
 
   deleteObjectStore(name: string): void {
     this.stores.delete(name);
+    (this.objectStoreNames as any).length = this.stores.size;
   }
 
   transaction(storeNames: string | string[], mode?: IDBTransactionMode): IDBTransaction {

@@ -3,8 +3,11 @@
 import { QueryBuilder } from './query-builder.js';
 import { ValidationRule } from './types.js';
 
-export class ActiveRecord<T = any> {
+export class ActiveRecord<_T = any> {
   id?: number;
+  _version?: number;
+  _deletedAt?: string | null;
+  updatedAt?: string;
   protected static db: IDBDatabase | null = null;
   protected static tableName: string = '';
   protected static indexes: any[] = [];
@@ -18,6 +21,51 @@ export class ActiveRecord<T = any> {
   protected static beforeDestroy?: (record: any) => void;
   protected static afterDestroy?: (record: any) => void;
   protected static validates?: Record<string, ValidationRule>;
+  static enableSync: boolean = false;
+  static softDelete: boolean = false;
+  /**
+   * Optional explicit column declarations. When set, these are the source of
+   * truth for the model's schema and are used by SyncEngine to call
+   * adapter.ensureTable(). Each entry can omit fields — sensible defaults
+   * are applied (nullable: true, type: 'string').
+   *
+   * Example:
+   *   static columns = {
+   *     title: { type: 'string', nullable: false },
+   *     priority: { type: 'integer', default: 0 }
+   *   };
+   */
+  static columns?: Record<string, Partial<{
+    type: string;
+    nullable: boolean;
+    default: unknown;
+    primaryKey: boolean;
+    autoIncrement: boolean;
+  }>>;
+
+  /**
+   * Normalize the static `columns` declaration into a ColumnDef[] array
+   * suitable for adapter.ensureTable(). Returns null if no columns declared.
+   */
+  static getColumnDefs(): Array<{
+    name: string;
+    type: string;
+    nullable: boolean;
+    default?: unknown;
+    primaryKey?: boolean;
+    autoIncrement?: boolean;
+  }> | null {
+    if (!this.columns) return null;
+    return Object.entries(this.columns).map(([name, def]) => ({
+      name,
+      type: def.type ?? 'string',
+      nullable: def.nullable ?? true,
+      ...(def.default !== undefined ? { default: def.default } : {}),
+      ...(def.primaryKey ? { primaryKey: true } : {}),
+      ...(def.autoIncrement ? { autoIncrement: true } : {})
+    }));
+  }
+
   errors: string[] = [];
 
   static setDatabase(db: IDBDatabase): void {
@@ -45,7 +93,7 @@ export class ActiveRecord<T = any> {
     });
   }
 
-  static async all(): Promise<any[]> {
+  static async all(options?: { withDeleted?: boolean }): Promise<any[]> {
     if (!this.db) throw new Error('Database not connected');
 
     return new Promise((resolve, reject) => {
@@ -54,7 +102,11 @@ export class ActiveRecord<T = any> {
       const request = store.getAll();
 
       request.onsuccess = () => {
-        const results = request.result.map((item: any) => {
+        let results = request.result;
+        if (!options?.withDeleted && this.softDelete) {
+          results = results.filter((item: any) => !item._deletedAt);
+        }
+        results = results.map((item: any) => {
           const instance = Object.create(this.prototype);
           Object.assign(instance, item);
           return instance;
@@ -65,8 +117,38 @@ export class ActiveRecord<T = any> {
     });
   }
 
+  static async withDeleted(): Promise<any[]> {
+    return this.all({ withDeleted: true });
+  }
+
+  static async onlyDeleted(): Promise<any[]> {
+    if (!this.db) throw new Error('Database not connected');
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction([this.tableName], 'readonly');
+      const store = transaction.objectStore(this.tableName);
+      const request = store.getAll();
+      request.onsuccess = () => {
+        const results = request.result
+          .filter((item: any) => item._deletedAt)
+          .map((item: any) => {
+            const instance = Object.create(this.prototype);
+            Object.assign(instance, item);
+            return instance;
+          });
+        resolve(results);
+      };
+      request.onerror = () => reject(request.error);
+    });
+  }
+
   static async create(data: any): Promise<any> {
     if (!this.db) throw new Error('Database not connected');
+
+    // Auto-set timestamps and version for sync-enabled models
+    if (this.enableSync) {
+      data.updatedAt = data.updatedAt || new Date().toISOString();
+      data._version = data._version || 1;
+    }
 
     // Run beforeCreate callback
     if (this.beforeCreate) {
@@ -81,12 +163,17 @@ export class ActiveRecord<T = any> {
       request.onsuccess = () => {
         const instance = Object.create(this.prototype);
         Object.assign(instance, data, { id: request.result });
-        
+
         // Run afterCreate callback
         if (this.afterCreate) {
           this.afterCreate(instance);
         }
-        
+
+        // Log change for sync tracking
+        if (this.enableSync) {
+          ActiveRecord.logChange(this.db!, this.tableName, request.result as number, 'create', instance);
+        }
+
         resolve(instance);
       };
       request.onerror = () => reject(request.error);
@@ -94,7 +181,7 @@ export class ActiveRecord<T = any> {
   }
 
   static where(field: string, operator: string, value?: any): QueryBuilder<any> {
-    return new QueryBuilder<any>(this.tableName, this.db).where(field, operator, value);
+    return new QueryBuilder<any>(this.tableName, this.db, this).where(field, operator, value);
   }
 
   static async transaction(callback: () => Promise<void>): Promise<void> {
@@ -127,16 +214,31 @@ export class ActiveRecord<T = any> {
       const transaction = constructor.db!.transaction([constructor.tableName], 'readwrite');
       const store = transaction.objectStore(constructor.tableName);
       const updatedData = { ...this, ...data };
+
+      // Auto-bump version and timestamp for sync-enabled models
+      if (constructor.enableSync) {
+        updatedData.updatedAt = new Date().toISOString();
+        updatedData._version = (updatedData._version || 0) + 1;
+      }
+
       const request = store.put(updatedData);
 
       request.onsuccess = () => {
         Object.assign(this, data);
-        
+        if (constructor.enableSync) {
+          Object.assign(this, { updatedAt: updatedData.updatedAt, _version: updatedData._version });
+        }
+
         // Run afterUpdate callback
         if (constructor.afterUpdate) {
           constructor.afterUpdate(this);
         }
-        
+
+        // Log change for sync tracking
+        if (constructor.enableSync) {
+          ActiveRecord.logChange(constructor.db!, constructor.tableName, this.id!, 'update', updatedData);
+        }
+
         resolve();
       };
       request.onerror = () => reject(request.error);
@@ -152,20 +254,133 @@ export class ActiveRecord<T = any> {
       constructor.beforeDestroy(this);
     }
 
+    if (constructor.softDelete) {
+      // Soft delete: set _deletedAt instead of removing
+      return new Promise((resolve, reject) => {
+        const transaction = constructor.db!.transaction([constructor.tableName], 'readwrite');
+        const store = transaction.objectStore(constructor.tableName);
+        const deletedData = { ...this, _deletedAt: new Date().toISOString() };
+        if (constructor.enableSync) {
+          deletedData.updatedAt = deletedData._deletedAt;
+          deletedData._version = (deletedData._version || 0) + 1;
+        }
+        const request = store.put(deletedData);
+
+        request.onsuccess = () => {
+          Object.assign(this, { _deletedAt: deletedData._deletedAt });
+          if (constructor.enableSync) {
+            Object.assign(this, { updatedAt: deletedData.updatedAt, _version: deletedData._version });
+          }
+
+          if (constructor.afterDestroy) {
+            constructor.afterDestroy(this);
+          }
+
+          if (constructor.enableSync) {
+            ActiveRecord.logChange(constructor.db!, constructor.tableName, this.id!, 'delete', deletedData);
+          }
+
+          resolve();
+        };
+        request.onerror = () => reject(request.error);
+      });
+    }
+
+    // Hard delete
     return new Promise((resolve, reject) => {
       const transaction = constructor.db!.transaction([constructor.tableName], 'readwrite');
       const store = transaction.objectStore(constructor.tableName);
       const request = store.delete(this.id!);
 
       request.onsuccess = () => {
-        // Run afterDestroy callback
         if (constructor.afterDestroy) {
           constructor.afterDestroy(this);
         }
+
+        if (constructor.enableSync) {
+          ActiveRecord.logChange(constructor.db!, constructor.tableName, this.id!, 'delete', { id: this.id });
+        }
+
         resolve();
       };
       request.onerror = () => reject(request.error);
     });
+  }
+
+  static async restore(id: number): Promise<void> {
+    if (!this.db) throw new Error('Database not connected');
+    if (!this.softDelete) throw new Error('softDelete is not enabled');
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction([this.tableName], 'readwrite');
+      const store = transaction.objectStore(this.tableName);
+      const request = store.get(id);
+
+      request.onsuccess = () => {
+        const record = request.result;
+        if (!record) return reject(new Error('Record not found'));
+        if (!record._deletedAt) return reject(new Error('Record is not deleted'));
+
+        const restored = { ...record, _deletedAt: null };
+        if (this.enableSync) {
+          restored.updatedAt = new Date().toISOString();
+          restored._version = (restored._version || 0) + 1;
+        }
+
+        const putReq = store.put(restored);
+        putReq.onsuccess = () => {
+          if (this.enableSync) {
+            ActiveRecord.logChange(this.db!, this.tableName, id, 'update', restored);
+          }
+          resolve();
+        };
+        putReq.onerror = () => reject(putReq.error);
+      };
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  /**
+   * Optional listener invoked after a change is logged. Used by Database to
+   * trigger auto-sync. Set via ActiveRecord.setChangeListener().
+   */
+  private static changeListener: ((table: string) => void) | null = null;
+
+  static setChangeListener(listener: ((table: string) => void) | null): void {
+    ActiveRecord.changeListener = listener;
+  }
+
+  /**
+   * Log a sync change to the __sync_changes store
+   */
+  private static logChange(
+    db: IDBDatabase,
+    table: string,
+    recordId: number,
+    action: 'create' | 'update' | 'delete',
+    data: any
+  ): void {
+    if (!db.objectStoreNames.contains('__sync_changes')) return;
+
+    try {
+      const tx = db.transaction(['__sync_changes'], 'readwrite');
+      const store = tx.objectStore('__sync_changes');
+      store.add({
+        table,
+        recordId,
+        action,
+        data,
+        timestamp: new Date().toISOString(),
+        synced: false
+      });
+      tx.oncomplete = () => {
+        if (ActiveRecord.changeListener) {
+          try { ActiveRecord.changeListener(table); } catch { /* ignore listener errors */ }
+        }
+      };
+    } catch {
+      // Silently fail if sync stores aren't ready
+    }
   }
 
   async isValid(): Promise<boolean> {

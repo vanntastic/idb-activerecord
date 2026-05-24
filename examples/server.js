@@ -29,13 +29,23 @@ const server = http.createServer((req, res) => {
   // Default to examples/index.html
   let filePath = req.url === '/' 
     ? path.join(PROJECT_ROOT, 'examples', 'index.html')
-    : path.join(PROJECT_ROOT, req.url);
+    : path.join(PROJECT_ROOT, req.url.split('?')[0]);
   
   // Security: prevent directory traversal
   if (!filePath.startsWith(PROJECT_ROOT)) {
     res.writeHead(403);
     res.end('Forbidden');
     return;
+  }
+
+  // If path is a directory, serve its index.html
+  try {
+    const stat = fs.statSync(filePath);
+    if (stat.isDirectory()) {
+      filePath = path.join(filePath, 'index.html');
+    }
+  } catch {
+    // File doesn't exist; will be handled by readFile below
   }
 
   const ext = path.extname(filePath);

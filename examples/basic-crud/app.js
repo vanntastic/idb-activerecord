@@ -1,6 +1,6 @@
 // Import the library from the built dist folder
 // Run `npm run build` first to compile the TypeScript
-import { Database, ActiveRecord } from '../dist/index.js';
+import { Database, ActiveRecord } from '../../dist/index.js';
 
 // Define User model
 class User extends ActiveRecord {

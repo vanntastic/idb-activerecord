@@ -26,7 +26,10 @@
     "test": "vitest",
     "test:coverage": "vitest --coverage",
     "prepublishOnly": "npm run build",
-    "example": "node examples/server.js"
+    "example": "node examples/run-all.js",
+    "example:static": "node examples/server.js",
+    "example:sqlite": "node examples/sqlite-sync/server.js",
+    "example:turso": "node examples/turso-sync/run.js"
   },
   "keywords": [
     "indexeddb",
@@ -41,6 +44,7 @@
     "url": "git+https://github.com/vanntastic/idb-activerecord.git"
   },
   "devDependencies": {
+    "@libsql/client": "^0.17.3",
     "@vitest/coverage-v8": "^1.2.0",
     "esbuild": "^0.28.0",
     "jsdom": "^27.0.1",

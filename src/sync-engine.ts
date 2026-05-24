@@ -1,0 +1,484 @@
+// SyncEngine - Multi-user sync orchestration
+// Handles bidirectional sync with conflict resolution, change tracking,
+// and soft-delete propagation across devices.
+
+import {
+  SyncAdapter,
+  SyncQuery,
+  SyncResult,
+  ConflictStrategy,
+  ColumnDef
+} from './sync-adapter.js';
+
+const SYNC_META_FIELDS = new Set([
+  'id', 'updatedAt', 'version', 'deleted_at', 'owner_id', '_version', '_deletedAt'
+]);
+
+// Sync protocol meta columns — declared client-side so any backend that
+// honors POST /schema can host a sync target without hardcoding these fields.
+const SYNC_META_COLUMNS: ColumnDef[] = [
+  { name: 'id', type: 'integer', nullable: false, primaryKey: true, autoIncrement: true },
+  { name: 'updatedAt', type: 'datetime', nullable: false, default: '' },
+  { name: 'version', type: 'integer', nullable: false, default: 1 },
+  { name: 'deleted_at', type: 'datetime', nullable: true },
+  { name: 'owner_id', type: 'string', nullable: true, default: 'demo' }
+];
+
+export interface SyncMeta {
+  table: string;
+  lastPushAt: string | null;
+  lastPullAt: string | null;
+  lastSyncCursor: string | null;
+}
+
+export interface SyncChange {
+  id?: number;
+  table: string;
+  recordId: number;
+  action: 'create' | 'update' | 'delete';
+  data: any;
+  timestamp: string;
+  synced: boolean;
+}
+
+export interface SyncOptions {
+  strategy?: ConflictStrategy;
+  batchSize?: number;
+  onProgress?: (message: string) => void;
+  /**
+   * Explicit user-column schema. When provided, used as the source of truth
+   * (merged with sync meta columns) and passed to adapter.ensureTable().
+   * If omitted, columns are inferred from pending records.
+   */
+  columns?: ColumnDef[];
+}
+
+export class SyncEngine {
+  private db: IDBDatabase | null = null;
+  private syncUser: string | null = null;
+
+  setDatabase(db: IDBDatabase): void {
+    this.db = db;
+  }
+
+  setUser(userId: string): void {
+    this.syncUser = userId;
+  }
+
+  getUser(): string | null {
+    return this.syncUser;
+  }
+
+  // ------------------------------------------------------------------
+  // Sync Meta helpers
+  // ------------------------------------------------------------------
+
+  private async getSyncMeta(table: string): Promise<SyncMeta> {
+    if (!this.db) throw new Error('Database not connected');
+    if (!this.db.objectStoreNames.contains('__sync_meta')) {
+      throw new Error('__sync_meta store missing. Bump database version to recreate stores.');
+    }
+
+    return new Promise((resolve, reject) => {
+      const tx = this.db!.transaction(['__sync_meta'], 'readonly');
+      const store = tx.objectStore('__sync_meta');
+      const req = store.get(table);
+
+      req.onsuccess = () => {
+        resolve(req.result || {
+          table,
+          lastPushAt: null,
+          lastPullAt: null,
+          lastSyncCursor: null
+        });
+      };
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  private async setSyncMeta(table: string, updates: Partial<SyncMeta>): Promise<void> {
+    if (!this.db) throw new Error('Database not connected');
+
+    const existing = await this.getSyncMeta(table);
+    const merged = { ...existing, ...updates, table };
+
+    return new Promise((resolve, reject) => {
+      const tx = this.db!.transaction(['__sync_meta'], 'readwrite');
+      const store = tx.objectStore('__sync_meta');
+      const req = store.put(merged);
+      req.onsuccess = () => resolve();
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  // ------------------------------------------------------------------
+  // Change log helpers
+  // ------------------------------------------------------------------
+
+  private async getPendingChanges(table: string): Promise<SyncChange[]> {
+    if (!this.db) throw new Error('Database not connected');
+    if (!this.db.objectStoreNames.contains('__sync_changes')) return [];
+
+    return new Promise((resolve, reject) => {
+      const tx = this.db!.transaction(['__sync_changes'], 'readonly');
+      const store = tx.objectStore('__sync_changes');
+      const index = store.index('table');
+      const req = index.getAll(table);
+
+      req.onsuccess = () => {
+        const all = (req.result as SyncChange[]).filter(c => !c.synced);
+        resolve(all);
+      };
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  private async getAllChanges(table: string): Promise<SyncChange[]> {
+    if (!this.db) throw new Error('Database not connected');
+    if (!this.db.objectStoreNames.contains('__sync_changes')) return [];
+
+    return new Promise((resolve, reject) => {
+      const tx = this.db!.transaction(['__sync_changes'], 'readonly');
+      const store = tx.objectStore('__sync_changes');
+      const index = store.index('table');
+      const req = index.getAll(table);
+      req.onsuccess = () => resolve(req.result as SyncChange[]);
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  private async markChangesSynced(ids: number[]): Promise<void> {
+    if (!this.db || ids.length === 0) return;
+
+    return new Promise((resolve, reject) => {
+      const tx = this.db!.transaction(['__sync_changes'], 'readwrite');
+      const store = tx.objectStore('__sync_changes');
+
+      let completed = 0;
+      ids.forEach(id => {
+        const getReq = store.get(id);
+        getReq.onsuccess = () => {
+          if (getReq.result) {
+            const putReq = store.put({ ...getReq.result, synced: true });
+            putReq.onsuccess = () => {
+              completed++;
+              if (completed === ids.length) resolve();
+            };
+            putReq.onerror = () => reject(putReq.error);
+          } else {
+            completed++;
+            if (completed === ids.length) resolve();
+          }
+        };
+        getReq.onerror = () => reject(getReq.error);
+      });
+    });
+  }
+
+  private async pruneSyncedChanges(table: string): Promise<void> {
+    if (!this.db) return;
+    if (!this.db.objectStoreNames.contains('__sync_changes')) return;
+
+    return new Promise((resolve, reject) => {
+      const tx = this.db!.transaction(['__sync_changes'], 'readwrite');
+      const store = tx.objectStore('__sync_changes');
+      const index = store.index('table');
+      const req = index.openCursor();
+
+      req.onsuccess = () => {
+        const cursor = req.result;
+        if (!cursor) {
+          resolve();
+          return;
+        }
+        const change = cursor.value as SyncChange;
+        if (change.table === table && change.synced) {
+          cursor.delete();
+        }
+        cursor.continue();
+      };
+      req.onerror = () => reject(req.error);
+    });
+  }
+
+  // ------------------------------------------------------------------
+  // Core sync orchestration
+  // ------------------------------------------------------------------
+
+  async sync(table: string, adapter: SyncAdapter, options: SyncOptions = {}): Promise<SyncResult> {
+    const strategy = options.strategy || ConflictStrategy.LAST_WRITE_WINS;
+    const onProgress = options.onProgress || (() => {});
+
+    const result: SyncResult = {
+      pushed: 0,
+      pulled: 0,
+      conflicts: 0,
+      errors: [],
+      timestamp: new Date()
+    };
+
+    if (!adapter.isConnected()) {
+      result.errors.push({ record: null, error: 'Adapter not connected' });
+      return result;
+    }
+
+    // 1. Ensure the remote table exists with full schema (sync meta + user columns).
+    //    If `options.columns` is provided, it is the strict source of truth — no
+    //    inferred columns are added. Otherwise we infer columns from pending records.
+    let userColumns: ColumnDef[];
+    if (options.columns && options.columns.length > 0) {
+      userColumns = options.columns;
+    } else {
+      const pendingForSchema = await this.getPendingChanges(table);
+      userColumns = this.deriveColumns(pendingForSchema.map(c => c.data));
+    }
+    await adapter.ensureTable(table, [...SYNC_META_COLUMNS, ...userColumns]);
+
+    // 2. Push local pending changes
+    onProgress('Pushing local changes...');
+    const pushResult = await this.pushChanges(table, adapter);
+    result.pushed = pushResult.pushed;
+    result.errors.push(...pushResult.errors);
+
+    // 3. Pull remote changes
+    onProgress('Pulling remote changes...');
+    const remoteRecords = await this.pullChanges(table, adapter);
+    result.pulled = remoteRecords.length;
+
+    // 4. Merge remote into local with conflict resolution
+    onProgress('Merging changes...');
+    const mergeResult = await this.mergeChanges(table, remoteRecords, adapter, strategy);
+    result.conflicts = mergeResult.conflicts;
+    result.errors.push(...mergeResult.errors);
+
+    // 5. Update sync metadata
+    await this.setSyncMeta(table, {
+      lastPushAt: new Date().toISOString(),
+      lastPullAt: new Date().toISOString()
+    });
+
+    onProgress('Sync complete.');
+    return result;
+  }
+
+  // ------------------------------------------------------------------
+  // Schema derivation: infer columns from local record samples
+  // ------------------------------------------------------------------
+
+  private deriveColumns(records: any[]): ColumnDef[] {
+    const colMap = new Map<string, ColumnDef>();
+    for (const record of records) {
+      if (!record || typeof record !== 'object') continue;
+      for (const [key, val] of Object.entries(record)) {
+        if (SYNC_META_FIELDS.has(key)) continue;
+        if (colMap.has(key)) continue;
+        let type = 'string';
+        if (typeof val === 'number') type = 'integer';
+        else if (typeof val === 'boolean') type = 'boolean';
+        else if (val instanceof Date) type = 'datetime';
+        colMap.set(key, { name: key, type, nullable: true });
+      }
+    }
+    return Array.from(colMap.values());
+  }
+
+  // ------------------------------------------------------------------
+  // Push: send local pending changes to remote
+  // ------------------------------------------------------------------
+
+  async pushChanges(table: string, adapter: SyncAdapter): Promise<SyncResult> {
+    const result: SyncResult = {
+      pushed: 0,
+      pulled: 0,
+      conflicts: 0,
+      errors: [],
+      timestamp: new Date()
+    };
+
+    const pending = await this.getPendingChanges(table);
+    if (pending.length === 0) return result;
+
+    // Build payload from latest change per recordId (only the most recent action matters)
+    const latestById = new Map<number, SyncChange>();
+    for (const change of pending) {
+      latestById.set(change.recordId, change);
+    }
+
+    const payload = Array.from(latestById.values()).map(c => c.data);
+    const pushResult = await adapter.push(payload, { table });
+
+    result.pushed = pushResult.pushed;
+    result.errors = pushResult.errors;
+
+    // Mark all pending changes as synced
+    const syncedIds = pending.map(c => c.id!).filter(Boolean);
+    await this.markChangesSynced(syncedIds);
+    await this.pruneSyncedChanges(table);
+
+    return result;
+  }
+
+  // ------------------------------------------------------------------
+  // Pull: fetch remote changes since last sync
+  // ------------------------------------------------------------------
+
+  async pullChanges(table: string, adapter: SyncAdapter): Promise<any[]> {
+    const meta = await this.getSyncMeta(table);
+
+    const query: SyncQuery = {
+      table,
+      since: meta.lastPullAt ? new Date(meta.lastPullAt) : undefined,
+      limit: 1000,
+      includeDeleted: true // sync must see tombstones to propagate deletions
+    };
+
+    // Auto-filter by user if set
+    if (this.syncUser) {
+      query.where = { owner_id: this.syncUser };
+    }
+
+    return adapter.pull(query);
+  }
+
+  // ------------------------------------------------------------------
+  // Merge: integrate remote records into local database
+  // ------------------------------------------------------------------
+
+  async mergeChanges(
+    table: string,
+    remoteRecords: any[],
+    adapter: SyncAdapter,
+    strategy: ConflictStrategy
+  ): Promise<SyncResult> {
+    const result: SyncResult = {
+      pushed: 0,
+      pulled: 0,
+      conflicts: 0,
+      errors: [],
+      timestamp: new Date()
+    };
+
+    if (!this.db) throw new Error('Database not connected');
+
+    for (const remote of remoteRecords) {
+      try {
+        await this.mergeSingleRecord(table, remote, adapter, strategy);
+      } catch (err) {
+        result.conflicts++;
+        result.errors.push({
+          record: remote,
+          error: err instanceof Error ? err.message : String(err)
+        });
+      }
+    }
+
+    return result;
+  }
+
+  private async mergeSingleRecord(
+    table: string,
+    remote: any,
+    adapter: SyncAdapter,
+    strategy: ConflictStrategy
+  ): Promise<void> {
+    if (!this.db) throw new Error('Database not connected');
+
+    // Pre-fetch pending changes to avoid nested transactions
+    const pending = await this.getPendingChanges(table);
+    const hasLocalPending = pending.some(c => c.recordId === remote.id);
+
+    return new Promise((resolve, reject) => {
+      const tx = this.db!.transaction([table], 'readwrite');
+      const store = tx.objectStore(table);
+      const localReq = store.get(remote.id);
+
+      localReq.onsuccess = async () => {
+        const local = localReq.result;
+
+        // Case 1: Remote is a tombstone (soft deleted)
+        if (remote._deletedAt) {
+          if (local) {
+            if (hasLocalPending) {
+              // Local has un-pushed changes: resolve conflict
+              const winner = await adapter.resolveConflict(local, remote, strategy);
+              if ((winner as any)._deletedAt) {
+                store.put({ ...local, _deletedAt: remote._deletedAt, updatedAt: remote.updatedAt });
+              }
+              // else keep local (it's the winner)
+            } else {
+              // No local pending changes: apply remote deletion
+              store.put({ ...local, _deletedAt: remote._deletedAt, updatedAt: remote.updatedAt });
+            }
+          }
+          resolve();
+          return;
+        }
+
+        // Case 2: No local record — insert remote
+        if (!local) {
+          store.add(remote);
+          resolve();
+          return;
+        }
+
+        // Case 3: Both exist — compare versions/timestamps
+        const localVersion = local._version || 0;
+        const remoteVersion = remote._version || 0;
+
+        if (remoteVersion > localVersion) {
+          store.put(remote);
+          resolve();
+          return;
+        }
+
+        if (localVersion > remoteVersion) {
+          resolve();
+          return;
+        }
+
+        // Same version — check timestamps
+        const localTime = new Date(local.updatedAt || 0);
+        const remoteTime = new Date(remote.updatedAt || 0);
+
+        if (remoteTime > localTime) {
+          store.put(remote);
+        }
+
+        resolve();
+      };
+      localReq.onerror = () => reject(localReq.error);
+    });
+  }
+
+  // ------------------------------------------------------------------
+  // Utilities
+  // ------------------------------------------------------------------
+
+  async getPendingCount(table: string): Promise<number> {
+    const pending = await this.getPendingChanges(table);
+    return pending.length;
+  }
+
+  async clearSyncData(table: string): Promise<void> {
+    if (!this.db) throw new Error('Database not connected');
+
+    await this.setSyncMeta(table, {
+      lastPushAt: null,
+      lastPullAt: null,
+      lastSyncCursor: null
+    });
+
+    const changes = await this.getAllChanges(table);
+    for (const change of changes) {
+      if (change.id !== undefined) {
+        await new Promise<void>((resolve, reject) => {
+          const tx = this.db!.transaction(['__sync_changes'], 'readwrite');
+          const store = tx.objectStore('__sync_changes');
+          const req = store.delete(change.id!);
+          req.onsuccess = () => resolve();
+          req.onerror = () => reject(req.error);
+        });
+      }
+    }
+  }
+}
