@@ -1,6 +1,6 @@
-# REST Sync Example — Multi-User Demo
+# SQLite Sync Example — Multi-User Demo
 
-Demonstrates **multi-user bidirectional sync** between IndexedDB and a real SQLite-backed REST API using `SyncEngine`, `RestAdapter`, soft deletes, and version-based conflict resolution.
+Demonstrates **multi-user bidirectional sync** between IndexedDB and a real SQLite database using `SyncEngine`, `SQLiteAdapter` (both browser and server), soft deletes, and version-based conflict resolution.
 
 ## Architecture
 
@@ -8,9 +8,9 @@ Demonstrates **multi-user bidirectional sync** between IndexedDB and a real SQLi
 ┌─────────────────────┐         ┌───────────────────────┐
 │  Browser (port 8080)│         │  Node API (port 3001) │
 │                     │  HTTP   │                       │
-│  IndexedDB          │ ──────▶ │  node:sqlite          │
-│  ↕ ActiveRecord     │ ◀────── │  ↕ tasks.db           │
-│  ↕ RestAdapter      │         │                       │
+│  IndexedDB          │ ──────▶ │  SQLiteAdapter        │
+│  ↕ ActiveRecord     │ ◀────── │  ↕ node:sqlite        │
+│  ↕ SQLiteAdapter    │         │  ↕ tasks.db           │
 └─────────────────────┘         └───────────────────────┘
 ```
 
@@ -30,13 +30,13 @@ npm run example
 
 This runs both the static file server (port 8080) and the SQLite-backed REST API (port 3001). Requires Node 22.5+ for `node:sqlite`.
 
-Then open: http://localhost:8080/examples/rest-sync/
+Then open: http://localhost:8080/examples/sqlite-sync/
 
 To run them individually:
 
 ```bash
 npm run example:static     # browser app only
-npm run example:sync-api   # REST API only
+npm run example:sqlite     # SQLite API only
 ```
 
 ## Endpoints
@@ -99,4 +99,4 @@ Open **DevTools > Application > IndexedDB > sync-demo** to inspect the `tasks`, 
 
 ## Database File
 
-The SQLite database is at `examples/rest-sync/sync-demo.db`. Delete it to reset server state. The browser's IndexedDB can be cleared via DevTools or the in-app **Clear Local** button.
+The SQLite database is at `examples/sqlite-sync/sync-demo.db`. Delete it to reset server state. The browser's IndexedDB can be cleared via DevTools or the in-app **Clear Local** button.

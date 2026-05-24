@@ -28,7 +28,6 @@ src/                    # Source files (TypeScript)
   sync-adapter.ts       # SyncAdapter interface, BaseAdapter, conflict resolution
   sync-engine.ts        # Multi-user SyncEngine: change tracking, merge, tombstones
   adapters/
-    rest-adapter.ts     # Generic REST API sync adapter
 
 tests/                  # Unit tests
   activerecord.test.ts  # Validation, callbacks
@@ -37,7 +36,7 @@ tests/                  # Unit tests
   relationships.test.ts # hasOne, hasMany, belongsTo
   migration.test.ts     # TableBuilder
   transactions.test.ts  # beginTransaction
-  sync-adapter.test.ts  # BaseAdapter, RestAdapter, conflict resolution
+  sync-adapter.test.ts  # BaseAdapter, TursoAdapter, conflict resolution
   sync-engine.test.ts   # SyncEngine push/pull/merge, version conflicts, tombstones
   mocks/
     indexeddb.ts        # Mock IDBDatabase/IDBTransaction for tests
@@ -53,7 +52,7 @@ examples/
     index.html
     app.js
     README.md
-  rest-sync/            # Multi-user sync demo with SQLite backend
+  sqlite-sync/          # Multi-user sync demo with SQLite backend
     index.html
     app.js
     server.js           # SQLite-backed REST API (port 3001, uses node:sqlite)

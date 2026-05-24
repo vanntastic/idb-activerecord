@@ -440,7 +440,7 @@ For multi-user / multi-device scenarios, `idb-activerecord` handles change track
 Enable sync on your model, connect an adapter, call `db.sync()`:
 
 ```typescript
-import { Database, ActiveRecord, RestAdapter, ConflictStrategy } from 'idb-activerecord';
+import { Database, ActiveRecord, TursoAdapter, ConflictStrategy } from 'idb-activerecord';
 
 class Task extends ActiveRecord {
   static tableName = 'tasks';
@@ -458,8 +458,8 @@ const db = new Database('my-app');  // version auto-managed
 db.registerModel(Task);
 await db.connect();
 
-const adapter = new RestAdapter();
-await adapter.connect({ url: 'https://api.example.com' });
+const adapter = new TursoAdapter();
+await adapter.connect({ url: 'https://api.example.com', endpointPattern: '/{table}' });
 
 // Bidirectional sync: push pending changes → pull remote → merge
 const result = await db.sync('tasks', adapter, {
@@ -537,7 +537,7 @@ await engine.clearSyncData('tasks');
 - **Cursor tracking** — `__sync_meta` persists `lastPullAt` per table so pulls only fetch what changed since last sync
 - **Conflict resolution** — newer `_version` wins; ties fall back to `updatedAt`; or use `ConflictStrategy.LOCAL_WINS` / `REMOTE_WINS` / `CUSTOM`
 
-See [`examples/rest-sync`](./examples/rest-sync) for a runnable multi-user demo with a SQLite backend.
+See [`examples/sqlite-sync`](./examples/sqlite-sync) for a runnable multi-user demo with a SQLite backend.
 
 ## Adapters
 
@@ -547,12 +547,12 @@ See [`examples/rest-sync`](./examples/rest-sync) for a runnable multi-user demo 
 
 | Adapter | Description | Status |
 |---------|-------------|--------|
-| `RestAdapter` | Generic REST API sync | ✅ Ready |
-| `TursoAdapter` | Turso / libSQL / SQLite (direct client) | ✅ Ready |
+| `TursoAdapter` | Turso / libSQL / SQLite (direct client or HTTP mode) | ✅ Ready |
+| `SQLiteAdapter` | Node.js `node:sqlite` (DatabaseSync) | ✅ Ready |
 
 #### TursoAdapter
 
-`TursoAdapter` syncs directly to a Turso/libSQL/SQLite database. It supports two modes:
+`TursoAdapter` syncs to a Turso/libSQL/SQLite database. It supports two modes:
 
 **Direct client mode (server-side):** Pass a raw `@libsql/client` instance — the adapter handles shimming internally:
 
@@ -581,7 +581,7 @@ await adapter.connect({ client });
 db.enableAutoSync(adapter, { debounceMs: 500, pollIntervalMs: 5000 });
 ```
 
-**HTTP mode (client-side):** Use the same `url`/`endpointPattern` config as `RestAdapter` to talk to a proxy server:
+**HTTP mode (browser-side):** Use `url`/`endpointPattern` to talk to a `SyncServer` instance:
 
 ```typescript
 import { Database, ActiveRecord, TursoAdapter } from 'idb-activerecord';
@@ -590,7 +590,7 @@ const db = new Database('my-app');
 db.registerModel(Task);
 await db.connect();
 
-// HTTP mode (client-side) - same API as RestAdapter
+// HTTP mode (browser-side) - talks to SyncServer
 const adapter = new TursoAdapter();
 await adapter.connect({
   url: 'http://localhost:3002',
@@ -603,6 +603,35 @@ db.enableAutoSync(adapter, { debounceMs: 500, pollIntervalMs: 5000 });
 For custom clients (e.g. `@tursodatabase/database`, `better-sqlite3`), implement the `TursoClient` interface (`prepare(sql).run/all`) and pass it to `connect()`. See the adapter source for the interface definition.
 
 The adapter handles `CREATE TABLE IF NOT EXISTS` provisioning, `ALTER TABLE ADD COLUMN` for new fields, version-based optimistic concurrency, and tombstone propagation via the `deleted_at` column. It maps the SyncEngine wire fields `_version` / `_deletedAt` to the SQL columns `version` / `deleted_at`.
+
+#### SQLiteAdapter
+
+`SQLiteAdapter` syncs to a SQLite database. It supports two modes:
+
+**Direct client mode (server-side):** Use Node.js's built-in `node:sqlite` module (`DatabaseSync`):
+
+```typescript
+import { DatabaseSync } from 'node:sqlite';
+import { SQLiteAdapter } from 'idb-activerecord';
+
+const db = new DatabaseSync('app.db');
+const adapter = new SQLiteAdapter();
+await adapter.connect({ client: db });
+```
+
+**HTTP mode (browser-side):** Use `url`/`endpointPattern` to talk to a `SyncServer` instance:
+
+```typescript
+import { SQLiteAdapter } from 'idb-activerecord';
+
+const adapter = new SQLiteAdapter();
+await adapter.connect({
+  url: 'http://localhost:3001',
+  endpointPattern: '/{table}'
+});
+```
+
+Same feature set as `TursoAdapter`: `CREATE TABLE IF NOT EXISTS`, `ALTER TABLE ADD COLUMN`, version-based optimistic concurrency, and tombstone propagation.
 
 ### Sync Server
 
@@ -647,12 +676,12 @@ await server.init();
 If you need to call an adapter directly (instead of going through `SyncEngine`):
 
 ```typescript
-import { RestAdapter, ConflictStrategy } from 'idb-activerecord';
+import { TursoAdapter } from 'idb-activerecord';
 
-const adapter = new RestAdapter();
+const adapter = new TursoAdapter();
 await adapter.connect({
   url: 'https://api.example.com',
-  authToken: 'Bearer xyz'
+  endpointPattern: '/{table}'
 });
 
 // Provision the remote table (idempotent — SyncEngine calls this for you)

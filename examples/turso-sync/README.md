@@ -1,6 +1,6 @@
 # Turso Sync Example
 
-Same browser demo as [`rest-sync`](../rest-sync/), but the data syncs to a real
+Same browser demo as [`sqlite-sync`](../sqlite-sync/), but the data syncs to a real
 remote **Turso (libSQL) database** via a tiny Node proxy that uses
 `TursoAdapter` internally.
 
@@ -48,8 +48,8 @@ them propagate to and from your Turso database in real time.
 | File | Purpose |
 |------|---------|
 | `server.js` | Node server using `SyncServer` with `TursoAdapter` — adapter-agnostic, ready-to-use HTTP API. |
-| `app.js` | Browser app (clone of `rest-sync/app.js`, only `API_URL` and IDB DB name changed). |
-| `index.html` | Browser UI (clone of `rest-sync/index.html`). |
+| `app.js` | Browser app (clone of `sqlite-sync/app.js`, only `API_URL` and IDB DB name changed). |
+| `index.html` | Browser UI (clone of `sqlite-sync/index.html`). |
 | `.env.example` | Template for `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`. |
 
 ## Architecture notes
@@ -68,7 +68,7 @@ them propagate to and from your Turso database in real time.
   is delegated to the same `TursoAdapter` you'd use elsewhere. The server passes
   a raw `@libsql/client` instance directly — no shimming needed.
 
-## API endpoints (mirrors rest-sync)
+## API endpoints (mirrors sqlite-sync)
 
 | Method | Path | Backed by |
 |--------|------|-----------|

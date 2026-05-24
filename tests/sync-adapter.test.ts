@@ -6,7 +6,6 @@ import {
   SyncMigration
 } from '../src/sync-adapter.js';
 import { ActiveRecord } from '../src/activerecord.js';
-import { RestAdapter } from '../src/adapters/rest-adapter.js';
 
 // --- Test BaseAdapter conflict resolution ---
 
@@ -112,111 +111,6 @@ describe('BaseAdapter', () => {
   it('should throw when config is missing required fields', () => {
     const adapter = new TestAdapter();
     expect(() => adapter['validateConfig'](['url'])).toThrow('Missing required config field: url');
-  });
-});
-
-// --- Test RestAdapter ---
-
-describe('RestAdapter', () => {
-  it('should create a RestAdapter', () => {
-    const adapter = new RestAdapter();
-    expect(adapter).toBeInstanceOf(BaseAdapter);
-    expect(adapter).toBeInstanceOf(RestAdapter);
-  });
-
-  it('should validate config on connect', async () => {
-    const adapter = new RestAdapter();
-    await expect(adapter.connect({ url: '' })).rejects.toThrow('Missing required config field: url');
-  });
-
-  it('should track sync state', async () => {
-    const adapter = new RestAdapter();
-    await adapter.connect({ url: 'http://localhost:3000' });
-
-    expect(adapter.state.status).toBe(SyncStatus.IDLE);
-    expect(adapter.state.lastSyncAt).toBeNull();
-  });
-
-  it('should use options.table when pushing plain objects (no ActiveRecord class)', async () => {
-    const adapter = new RestAdapter();
-    await adapter.connect({ url: 'http://localhost:3000' });
-
-    const plainRecords = [
-      { id: 1, title: 'Task A', _version: 1 },
-      { id: 2, title: 'Task B', _version: 2 }
-    ] as unknown as ActiveRecord[];
-
-    let capturedUrl = '';
-    const origFetch = globalThis.fetch;
-    globalThis.fetch = async (url: RequestInfo | URL) => {
-      capturedUrl = url.toString();
-      return new Response(JSON.stringify({ pushed: 2, errors: [] }), { status: 200 });
-    };
-
-    await adapter.push(plainRecords, { table: 'tasks' });
-    globalThis.fetch = origFetch;
-
-    expect(capturedUrl).toContain('/tasks');
-  });
-
-  it('should throw when pushing plain objects without options.table', async () => {
-    const adapter = new RestAdapter();
-    await adapter.connect({ url: 'http://localhost:3000' });
-
-    const plainRecords = [{ id: 1, title: 'No class' }] as unknown as ActiveRecord[];
-
-    await expect(adapter.push(plainRecords)).rejects.toThrow('Cannot push records without tableName');
-  });
-
-  it('should send include_deleted=true query param when SyncQuery.includeDeleted is set', async () => {
-    const adapter = new RestAdapter();
-    await adapter.connect({ url: 'http://localhost:3000' });
-
-    let capturedUrl = '';
-    const origFetch = globalThis.fetch;
-    globalThis.fetch = async (url: RequestInfo | URL) => {
-      capturedUrl = url.toString();
-      return new Response(JSON.stringify([]), { status: 200 });
-    };
-
-    await adapter.pull({ table: 'tasks', includeDeleted: true });
-    globalThis.fetch = origFetch;
-
-    expect(capturedUrl).toContain('include_deleted=true');
-  });
-
-  it('should omit include_deleted when not set', async () => {
-    const adapter = new RestAdapter();
-    await adapter.connect({ url: 'http://localhost:3000' });
-
-    let capturedUrl = '';
-    const origFetch = globalThis.fetch;
-    globalThis.fetch = async (url: RequestInfo | URL) => {
-      capturedUrl = url.toString();
-      return new Response(JSON.stringify([]), { status: 200 });
-    };
-
-    await adapter.pull({ table: 'tasks' });
-    globalThis.fetch = origFetch;
-
-    expect(capturedUrl).not.toContain('include_deleted');
-  });
-
-  it('should send where filters as query params', async () => {
-    const adapter = new RestAdapter();
-    await adapter.connect({ url: 'http://localhost:3000' });
-
-    let capturedUrl = '';
-    const origFetch = globalThis.fetch;
-    globalThis.fetch = async (url: RequestInfo | URL) => {
-      capturedUrl = url.toString();
-      return new Response(JSON.stringify([]), { status: 200 });
-    };
-
-    await adapter.pull({ table: 'tasks', where: { owner_id: 'alice' } });
-    globalThis.fetch = origFetch;
-
-    expect(capturedUrl).toContain('owner_id=alice');
   });
 });
 

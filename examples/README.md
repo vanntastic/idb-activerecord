@@ -17,8 +17,8 @@ Then open your browser to: http://localhost:8080
 | Example | Path | Description |
 |---------|------|-------------|
 | **Basic CRUD** | `/examples/basic-crud/` | Full CRUD demo with users, queries, validation, and statistics |
-| **REST Sync** | `/examples/rest-sync/` | Sync local IndexedDB with a mock REST API using `RestAdapter` |
-| **Turso Sync** | `/examples/turso-sync/` | Same browser demo as REST Sync, but synced to a real remote **Turso** database via a Node proxy. Configure `.env`, then `npm run example:turso-api`. |
+| **SQLite Sync** | `/examples/sqlite-sync/` | Sync local IndexedDB with a real SQLite database using `SQLiteAdapter` + `SyncServer` |
+| **Turso Sync** | `/examples/turso-sync/` | Same browser demo, but synced to a real remote **Turso** database via a Node proxy. Configure `.env`, then `npm run example:turso`. |
 
 ## Basic CRUD
 
@@ -38,7 +38,7 @@ Demonstrates the Sync Adapter API with a real Node.js REST API backed by SQLite.
 - **Conflict Resolution**: `LAST_WRITE_WINS` strategy demo
 - **Real Persistence**: Tasks survive across browser refreshes and server restarts
 
-`npm run example` automatically starts both the static file server and the SQLite-backed REST API. Then open `/examples/rest-sync/`. See [`rest-sync/README.md`](./rest-sync/README.md) for details.
+`npm run example` automatically starts both the static file server and the SQLite-backed API. Then open `/examples/sqlite-sync/`. See [`sqlite-sync/README.md`](./sqlite-sync/README.md) for details.
 
 ## Turso Sync
 

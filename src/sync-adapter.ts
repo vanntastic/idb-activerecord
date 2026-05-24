@@ -8,9 +8,9 @@ import { ActiveRecord } from './activerecord.js';
  */
 export interface AdapterConfig {
   /**
-   * Optional connection URL. Required by network adapters like `RestAdapter`,
+   * Optional connection URL. Required by HTTP mode adapters like `TursoAdapter`,
    * not used by client-injected adapters like `TursoAdapter` (which carry the
-   * connection in a pre-built client instance).
+   * connection in a pre-built client instance) or `SQLiteAdapter`.
    */
   url?: string;
   authToken?: string;

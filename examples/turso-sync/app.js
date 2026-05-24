@@ -1,7 +1,7 @@
 // Turso Sync Example — Multi-User Demo
-// Browser uses TursoAdapter in HTTP mode (same API as RestAdapter) to talk to
-// the proxy at localhost:3002. The proxy uses TursoAdapter with a raw libsql
-// client to sync with the remote Turso database.
+// Browser uses TursoAdapter in HTTP mode to talk to the proxy at localhost:3002.
+// The proxy uses TursoAdapter with a raw libsql client to sync with the remote
+// Turso database.
 
 import { Database, ActiveRecord, TursoAdapter, ConflictStrategy } from '../../dist/index.js';
 

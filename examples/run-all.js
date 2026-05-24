@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Runs the static file server and the REST sync API server together.
+// Runs the static file server and the SQLite sync API server together.
 
 import { spawn } from 'node:child_process';
 import path from 'node:path';
@@ -15,7 +15,7 @@ const COLORS = {
 
 const procs = [
   { name: 'static', script: path.join(__dirname, 'server.js') },
-  { name: 'api', script: path.join(__dirname, 'rest-sync', 'server.js') }
+  { name: 'api', script: path.join(__dirname, 'sqlite-sync', 'server.js') }
 ];
 
 const children = procs.map(({ name, script }) => {

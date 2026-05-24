@@ -1,7 +1,7 @@
-// REST Sync Adapter Example — Multi-User Demo
+// SQLite Sync Adapter Example — Multi-User Demo
 // Demonstrates SyncEngine with change tracking, soft deletes, and conflict resolution.
 
-import { Database, ActiveRecord, RestAdapter, ConflictStrategy } from '../../dist/index.js';
+import { Database, ActiveRecord, SQLiteAdapter, ConflictStrategy } from '../../dist/index.js';
 
 // --- Models ---
 
@@ -68,7 +68,7 @@ db.registerModel(Task);
 db.registerModel(Note);
 db.registerModel(Label);
 
-const adapter = new RestAdapter();
+const adapter = new SQLiteAdapter();
 
 // --- UI Logic ---
 

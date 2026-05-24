@@ -28,7 +28,7 @@
     "prepublishOnly": "npm run build",
     "example": "node examples/run-all.js",
     "example:static": "node examples/server.js",
-    "example:sync-api": "node examples/rest-sync/server.js",
+    "example:sqlite": "node examples/sqlite-sync/server.js",
     "example:turso": "node examples/turso-sync/run.js"
   },
   "keywords": [
