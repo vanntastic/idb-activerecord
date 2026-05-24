@@ -47,7 +47,7 @@ them propagate to and from your Turso database in real time.
 
 | File | Purpose |
 |------|---------|
-| `server.js` | Node HTTP proxy: REST endpoints → `@libsql/client` → Turso. Uses `TursoAdapter` with a raw libsql client. |
+| `server.js` | Node server using `SyncServer` with `TursoAdapter` — adapter-agnostic, ready-to-use HTTP API. |
 | `app.js` | Browser app (clone of `rest-sync/app.js`, only `API_URL` and IDB DB name changed). |
 | `index.html` | Browser UI (clone of `rest-sync/index.html`). |
 | `.env.example` | Template for `TURSO_DATABASE_URL` and `TURSO_AUTH_TOKEN`. |
@@ -58,6 +58,9 @@ them propagate to and from your Turso database in real time.
   mode (`url`/`endpointPattern`) to talk to the proxy, while the server uses
   direct client mode with a raw `@libsql/client` instance. Same adapter, different
   transport.
+- **SyncServer:** The server uses the `SyncServer` module — a ready-to-use
+  HTTP server that's adapter-agnostic. You can import `SyncServer` in your own
+  projects to avoid writing custom server logic.
 - **Why the proxy?** `@libsql/client` works in the browser, but bundling it
   here would require a build step and shipping the auth token to clients.
   Tiny proxy = clean separation, server-held credentials.
