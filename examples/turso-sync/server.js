@@ -41,17 +41,7 @@ console.log(`📦 Connected to Turso: ${TURSO_URL}`);
 
 const server = new SyncServer({
   port: 3002,
-  adapter,
-  // Optional: customize routes if needed
-  routes: {
-    health: async (req, res) => {
-      res.writeHead(200, {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*'
-      });
-      res.end(JSON.stringify({ status: 'ok', backend: 'turso', timestamp: new Date().toISOString() }));
-    }
-  }
+  adapter
 });
 
 await server.init();
