@@ -100,8 +100,6 @@ const adults = await User.where('age', '>=', 18).all();
 
 ### With CDN (plain HTML)
 
-View this example in [CodeSandbox](https://codesandbox.io/p/sandbox/cqjngw)
-
 ```html
 <!DOCTYPE html>
 <html>
@@ -548,7 +546,7 @@ See [`examples/sqlite-sync`](./examples/sqlite-sync) for a runnable multi-user d
 | Adapter | Description | Status |
 |---------|-------------|--------|
 | `TursoAdapter` | Turso / libSQL / SQLite (direct client or HTTP mode) | ✅ Ready |
-| `SQLiteAdapter` | Node.js `node:sqlite` (DatabaseSync) | ✅ Ready |
+| `SQLiteAdapter` | Node.js `node:sqlite` (DatabaseSync or HTTP mode) | ✅ Ready |
 
 #### TursoAdapter
 
