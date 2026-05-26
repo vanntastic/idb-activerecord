@@ -13,6 +13,18 @@
     ".": {
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
+    },
+    "./sync-server": {
+      "import": "./dist/sync-server.js",
+      "types": "./dist/sync-server.d.ts"
+    },
+    "./turso-adapter": {
+      "import": "./dist/adapters/turso-adapter.js",
+      "types": "./dist/adapters/turso-adapter.d.ts"
+    },
+    "./sqlite-adapter": {
+      "import": "./dist/adapters/sqlite-adapter.js",
+      "types": "./dist/adapters/sqlite-adapter.d.ts"
     }
   },
   "files": [
@@ -43,8 +55,10 @@
     "type": "git",
     "url": "git+https://github.com/vanntastic/idb-activerecord.git"
   },
+  "dependencies": {
+    "@libsql/client": "^0.17.3"
+  },
   "devDependencies": {
-    "@libsql/client": "^0.17.3",
     "@vitest/coverage-v8": "^1.2.0",
     "esbuild": "^0.28.0",
     "jsdom": "^27.0.1",

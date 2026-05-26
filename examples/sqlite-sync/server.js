@@ -6,8 +6,8 @@
 import { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { SQLiteAdapter } from '../../dist/index.js';
-import { SyncServer } from '../../dist/sync-server.js';
+import { SQLiteAdapter } from 'idb-activerecord/sqlite-adapter';
+import { SyncServer } from 'idb-activerecord/sync-server';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
