@@ -12,8 +12,8 @@
 //   npm run example:turso
 
 import { createClient } from '@libsql/client';
-import { TursoAdapter } from '../../dist/index.js';
-import { SyncServer } from '../../dist/sync-server.js';
+import { TursoAdapter } from 'idb-activerecord/turso-adapter';
+import { SyncServer } from 'idb-activerecord/sync-server';
 
 const TURSO_URL = process.env.TURSO_DATABASE_URL;
 const TURSO_TOKEN = process.env.TURSO_AUTH_TOKEN;

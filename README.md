@@ -17,8 +17,8 @@ IDB ActiveRecord provides a clean, intuitive interface for working with IndexedD
 - **Transactions**: Automatic transaction management with beginTransaction for manual control
 - **Callbacks**: beforeCreate, afterCreate, beforeUpdate, afterUpdate, beforeDestroy, afterDestroy
 - **Validation**: Built-in validation rules for presence, length, and format
-- **Sync Adapters**: Pluggable sync with REST APIs and cloud databases (Turso, Supabase planned)
-- **Lightweight**: Zero dependencies, small bundle size
+- **Sync Adapters**: Pluggable sync with REST APIs and cloud databases (Turso & SQLite adapters included)
+- **Lightweight**: Minimal dependencies, small bundle size (~35-40KB minified)
 - **Browser Support**: Works in all modern browsers with IndexedDB support
 
 ## Installation
@@ -556,7 +556,8 @@ See [`examples/sqlite-sync`](./examples/sqlite-sync) for a runnable multi-user d
 
 ```typescript
 import { createClient } from '@libsql/client';
-import { Database, ActiveRecord, TursoAdapter } from 'idb-activerecord';
+import { Database, ActiveRecord } from 'idb-activerecord';
+import { TursoAdapter } from 'idb-activerecord/turso-adapter';
 
 class Task extends ActiveRecord {
   static tableName = 'tasks';
@@ -610,7 +611,7 @@ The adapter handles `CREATE TABLE IF NOT EXISTS` provisioning, `ALTER TABLE ADD 
 
 ```typescript
 import { DatabaseSync } from 'node:sqlite';
-import { SQLiteAdapter } from 'idb-activerecord';
+import { SQLiteAdapter } from 'idb-activerecord/sqlite-adapter';
 
 const db = new DatabaseSync('app.db');
 const adapter = new SQLiteAdapter();
@@ -639,8 +640,8 @@ Same feature set as `TursoAdapter`: `CREATE TABLE IF NOT EXISTS`, `ALTER TABLE A
 
 ```typescript
 import { createClient } from '@libsql/client';
-import { TursoAdapter } from 'idb-activerecord';
-import { SyncServer } from 'idb-activerecord/dist/sync-server.js';
+import { TursoAdapter } from 'idb-activerecord/turso-adapter';
+import { SyncServer } from 'idb-activerecord/sync-server';
 
 const client = createClient({ url: 'libsql://my-db.turso.io', authToken });
 const adapter = new TursoAdapter();
