@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/vanntastic/idb-activerecord/compare/v1.1.0...v1.2.0) (2026-05-26)
+
+
+### Features
+
+* extract adapters into separate imports - release-as: minor ([1a199c0](https://github.com/vanntastic/idb-activerecord/commit/1a199c00b74e6d966b4a9418e58a3c477ee4a75f))
+
 ## [1.1.0](https://github.com/vanntastic/idb-activerecord/compare/v1.0.2...v1.1.0) (2026-05-24)
 
 
