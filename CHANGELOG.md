@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.1](https://github.com/vanntastic/idb-activerecord/compare/v1.2.0...v1.2.1) (2026-05-27)
+
+
+### Documentation
+
+* update CDN version reference to 1.2.0 ([9296d12](https://github.com/vanntastic/idb-activerecord/commit/9296d128216897f6238394525fa777ffe18ab347))
+
 ## [1.2.0](https://github.com/vanntastic/idb-activerecord/compare/v1.1.0...v1.2.0) (2026-05-26)
 
 
