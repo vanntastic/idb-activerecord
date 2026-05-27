@@ -26,9 +26,13 @@ jobs:
       - uses: actions/setup-node@v4
         if: ${{ steps.release.outputs.release_created }}
         with:
-          node-version: 20
+          node-version: 22
           registry-url: 'https://registry.npmjs.org'
           cache: 'npm'
+
+      - name: Update npm for trusted publishing
+        if: ${{ steps.release.outputs.release_created }}
+        run: npm install -g npm@latest
 
       - name: Install dependencies
         if: ${{ steps.release.outputs.release_created }}
