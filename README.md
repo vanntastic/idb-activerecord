@@ -36,7 +36,7 @@ pnpm add idb-activerecord
 **CDN (via jsDelivr)**
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/idb-activerecord@1.1.1/dist/idb-activerecord.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/idb-activerecord@1.2.0/dist/idb-activerecord.min.js"></script>
 ```
 
 All exports are available under the global `IDBActiveRecord` object:
