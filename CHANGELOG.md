@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.2](https://github.com/vanntastic/idb-activerecord/compare/v1.2.1...v1.2.2) (2026-05-31)
+
+
+### Bug Fixes
+
+* simplify release workflow and update CDN links to use semver range ([c0ee7ca](https://github.com/vanntastic/idb-activerecord/commit/c0ee7ca90ba3af21bee5a044709aeddebe308143))
+
 ## [1.2.1](https://github.com/vanntastic/idb-activerecord/compare/v1.2.0...v1.2.1) (2026-05-27)
 
 
