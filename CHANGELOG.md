@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.4](https://github.com/vanntastic/idb-activerecord/compare/v1.2.3...v1.2.4) (2026-05-31)
+
+
+### Bug Fixes
+
+* allow /schema/{table} endpoints and add HTTP mode table name validation tests ([a2fd2c4](https://github.com/vanntastic/idb-activerecord/commit/a2fd2c41c5dc7fd0f3f0c477642dcce854267925))
+
 ## [1.2.3](https://github.com/vanntastic/idb-activerecord/compare/v1.2.2...v1.2.3) (2026-05-31)
 
 

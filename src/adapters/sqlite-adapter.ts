@@ -137,11 +137,19 @@ export class SQLiteAdapter extends BaseAdapter {
 
   private buildUrl(table: string, queryParams: Record<string, string> = {}): string {
     const normalizedTable = table.trim();
-    if (!/^[a-z_][a-z0-9_]*$/i.test(normalizedTable)) {
-      throw new Error(`Invalid table name for HTTP sync endpoint: ${table}`);
+    let endpoint: string;
+    if (normalizedTable.startsWith('/')) {
+      const allowedInternalEndpoints = new Set(['/schema', '/migrations']);
+      if (!allowedInternalEndpoints.has(normalizedTable) && !normalizedTable.startsWith('/schema/')) {
+        throw new Error(`Invalid endpoint: ${normalizedTable}`);
+      }
+      endpoint = normalizedTable;
+    } else {
+      if (!/^[a-z_][a-z0-9_]*$/i.test(normalizedTable)) {
+        throw new Error(`Invalid table name: ${normalizedTable}`);
+      }
+      endpoint = this.httpEndpointPattern!.replace('{table}', encodeURIComponent(normalizedTable));
     }
-
-    const endpoint = this.httpEndpointPattern!.replace('{table}', encodeURIComponent(normalizedTable));
     const url = new URL(endpoint, this.httpUrl!);
     for (const [key, value] of Object.entries(queryParams)) {
       url.searchParams.set(key, value);
