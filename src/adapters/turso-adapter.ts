@@ -206,7 +206,11 @@ export class TursoAdapter extends BaseAdapter {
     try {
       if (this.useHttp) {
         // HTTP mode: GET /:table with query params
-        const endpoint = this.httpEndpointPattern!.replace('{table}', query.table);
+        if (!/^[a-z_][a-z0-9_]*$/i.test(query.table)) {
+          throw new Error(`Invalid table name: ${query.table}`);
+        }
+        const safeTable = encodeURIComponent(query.table);
+        const endpoint = this.httpEndpointPattern!.replace('{table}', safeTable);
         const url = new URL(endpoint, this.httpUrl);
         if (query.since) url.searchParams.set('since', query.since.toISOString());
         if (query.where) {

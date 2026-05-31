@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { TursoAdapter, TursoClient, TursoStatement } from '../src/adapters/turso-adapter';
 import { BaseAdapter, SyncStatus } from '../src/sync-adapter';
 
@@ -392,6 +392,41 @@ describe('TursoAdapter', () => {
       // Only id=2 (id=3 is excluded by deleted_at filter)
       expect(rows).toHaveLength(1);
       expect((rows[0] as any).id).toBe(2);
+    });
+  });
+
+  describe('pull (HTTP mode)', () => {
+    it('throws for invalid table names in HTTP mode', async () => {
+      const httpAdapter = new TursoAdapter();
+      await httpAdapter.connect({ url: 'http://localhost:3000', endpointPattern: '/{table}' });
+
+      await expect(
+        httpAdapter.pull({ table: 'evil"; DROP TABLE tasks;--' })
+      ).rejects.toThrow(/Invalid table name/i);
+
+      await expect(
+        httpAdapter.pull({ table: '../etc/passwd' })
+      ).rejects.toThrow(/Invalid table name/i);
+
+      await expect(
+        httpAdapter.pull({ table: 'tasks; DROP TABLE tasks;' })
+      ).rejects.toThrow(/Invalid table name/i);
+    });
+
+    it('accepts valid table names in HTTP mode', async () => {
+      const httpAdapter = new TursoAdapter();
+      await httpAdapter.connect({ url: 'http://localhost:3000', endpointPattern: '/{table}' });
+
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+        ok: true,
+        json: async () => []
+      } as Response);
+
+      await expect(httpAdapter.pull({ table: 'tasks' })).resolves.toEqual([]);
+      await expect(httpAdapter.pull({ table: 'my_table' })).resolves.toEqual([]);
+      await expect(httpAdapter.pull({ table: 'Table123' })).resolves.toEqual([]);
+
+      fetchSpy.mockRestore();
     });
   });
 
