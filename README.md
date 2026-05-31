@@ -36,7 +36,7 @@ pnpm add idb-activerecord
 **CDN (via jsDelivr)**
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/idb-activerecord@1.2.0/dist/idb-activerecord.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/idb-activerecord@1/dist/idb-activerecord.min.js"></script>
 ```
 
 All exports are available under the global `IDBActiveRecord` object:
@@ -104,7 +104,7 @@ const adults = await User.where('age', '>=', 18).all();
 <!DOCTYPE html>
 <html>
 <head>
-  <script src="https://cdn.jsdelivr.net/npm/idb-activerecord@1.0.1/dist/idb-activerecord.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/idb-activerecord@1/dist/idb-activerecord.min.js"></script>
 </head>
 <body>
   <p>To view the database: open your devTools > Application > IndexedDB > my-app > users</p>
