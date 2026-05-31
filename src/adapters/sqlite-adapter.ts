@@ -139,7 +139,7 @@ export class SQLiteAdapter extends BaseAdapter {
     let endpoint: string;
     if (table.startsWith('/')) {
       const allowedInternalEndpoints = new Set(['/schema', '/migrations']);
-      if (!allowedInternalEndpoints.has(table)) {
+      if (!allowedInternalEndpoints.has(table) && !table.startsWith('/schema/')) {
         throw new Error(`Invalid endpoint: ${table}`);
       }
       endpoint = table;
