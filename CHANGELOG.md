@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.3](https://github.com/vanntastic/idb-activerecord/compare/v1.2.2...v1.2.3) (2026-05-31)
+
+
+### Bug Fixes
+
+* add HTTP mode table name validation tests for the codeql security issue ([a6f3bbf](https://github.com/vanntastic/idb-activerecord/commit/a6f3bbfc315b74b5169b054e9948982159fe946a))
+
 ## [1.2.2](https://github.com/vanntastic/idb-activerecord/compare/v1.2.1...v1.2.2) (2026-05-31)
 
 
