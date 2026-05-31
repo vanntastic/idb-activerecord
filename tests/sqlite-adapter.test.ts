@@ -62,6 +62,25 @@ describe('SQLiteAdapter (HTTP mode)', () => {
 
       fetchSpy.mockRestore();
     });
+
+    it('trims whitespace before validation (accepts padded valid names)', async () => {
+      const adapter = await makeHttpAdapter();
+      const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+        ok: true,
+        json: async () => []
+      } as Response);
+
+      await expect(adapter.pull({ table: '  tasks  ' })).resolves.toEqual([]);
+
+      fetchSpy.mockRestore();
+    });
+
+    it('throws for whitespace-padded injection payloads after trim', async () => {
+      const adapter = await makeHttpAdapter();
+      await expect(
+        adapter.pull({ table: '  evil"; DROP TABLE tasks;--  ' })
+      ).rejects.toThrow(/Invalid table name/i);
+    });
   });
 
   describe('push — table name validation (buildUrl)', () => {
