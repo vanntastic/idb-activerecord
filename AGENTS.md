@@ -115,13 +115,13 @@ All commit messages must follow the [Conventional Commits](https://www.conventio
 ```
 
 Common types:
-- `feat` — a new feature
-- `fix` — a bug fix
-- `docs` — documentation changes only
-- `test` — adding or updating tests
-- `refactor` — code change that neither fixes a bug nor adds a feature
-- `chore` — build process, tooling, or dependency updates
-- `perf` — performance improvement
+- `feat` — a new feature (**minor version bump**)
+- `fix` — a bug fix (**patch version bump**)
+- `perf` — performance improvement (**patch version bump**)
+- `docs` — documentation changes only (no version bump)
+- `test` — adding or updating tests (no version bump)
+- `refactor` — code change that neither fixes a bug nor adds a feature (no version bump)
+- `chore` — build process, tooling, or dependency updates (no version bump)
 
 Examples:
 ```
