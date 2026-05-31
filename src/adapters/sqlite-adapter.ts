@@ -138,9 +138,16 @@ export class SQLiteAdapter extends BaseAdapter {
   private buildUrl(table: string, queryParams: Record<string, string> = {}): string {
     let endpoint: string;
     if (table.startsWith('/')) {
+      const allowedInternalEndpoints = new Set(['/schema', '/migrations']);
+      if (!allowedInternalEndpoints.has(table)) {
+        throw new Error(`Invalid endpoint: ${table}`);
+      }
       endpoint = table;
     } else {
-      endpoint = this.httpEndpointPattern!.replace('{table}', table);
+      if (!/^[a-z_][a-z0-9_]*$/i.test(table)) {
+        throw new Error(`Invalid table name: ${table}`);
+      }
+      endpoint = this.httpEndpointPattern!.replace('{table}', encodeURIComponent(table));
     }
     const url = new URL(endpoint, this.httpUrl!);
     for (const [key, value] of Object.entries(queryParams)) {
