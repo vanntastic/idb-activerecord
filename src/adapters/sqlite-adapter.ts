@@ -136,18 +136,19 @@ export class SQLiteAdapter extends BaseAdapter {
   }
 
   private buildUrl(table: string, queryParams: Record<string, string> = {}): string {
+    const normalizedTable = table.trim();
     let endpoint: string;
-    if (table.startsWith('/')) {
+    if (normalizedTable.startsWith('/')) {
       const allowedInternalEndpoints = new Set(['/schema', '/migrations']);
-      if (!allowedInternalEndpoints.has(table) && !table.startsWith('/schema/')) {
-        throw new Error(`Invalid endpoint: ${table}`);
+      if (!allowedInternalEndpoints.has(normalizedTable) && !normalizedTable.startsWith('/schema/')) {
+        throw new Error(`Invalid endpoint: ${normalizedTable}`);
       }
-      endpoint = table;
+      endpoint = normalizedTable;
     } else {
-      if (!/^[a-z_][a-z0-9_]*$/i.test(table)) {
-        throw new Error(`Invalid table name: ${table}`);
+      if (!/^[a-z_][a-z0-9_]*$/i.test(normalizedTable)) {
+        throw new Error(`Invalid table name: ${normalizedTable}`);
       }
-      endpoint = this.httpEndpointPattern!.replace('{table}', encodeURIComponent(table));
+      endpoint = this.httpEndpointPattern!.replace('{table}', encodeURIComponent(normalizedTable));
     }
     const url = new URL(endpoint, this.httpUrl!);
     for (const [key, value] of Object.entries(queryParams)) {
