@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.0](https://github.com/vanntastic/idb-activerecord/compare/v1.2.4...v1.3.0) (2026-06-05)
+
+
+### Features
+
+* add Rails-style property accessors for relationships ([9dca9e1](https://github.com/vanntastic/idb-activerecord/commit/9dca9e1d0d0cdb271e86b99f63ac872949e7d895))
+* add Rails-style property accessors for relationships ([37660d8](https://github.com/vanntastic/idb-activerecord/commit/37660d8a34acc2f0cd78e880e0a5b2fc96d1aa40))
+
 ## [1.2.4](https://github.com/vanntastic/idb-activerecord/compare/v1.2.3...v1.2.4) (2026-05-31)
 
 
