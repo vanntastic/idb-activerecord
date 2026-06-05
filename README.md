@@ -295,14 +295,24 @@ class User extends ActiveRecord<User> {
   };
 }
 
-// Access relationships
+// Access relationships via property syntax (recommended)
 const user = await User.find(1);
-const posts = await user.hasMany('posts'); // Returns user's posts
-const profile = await user.hasOne('profile'); // Returns user's profile
+const posts = await user.posts;        // hasMany
+const profile = await user.profile;   // hasOne
 
 const post = await Post.find(1);
-const author = await post.belongsTo('author'); // Returns post's author
+const author = await post.author;     // belongsTo
 ```
+
+Property accessors are defined automatically on every instance returned by `find`, `all`, `create`, etc. Each property is a lazy getter that returns the same Promise as the corresponding method call.
+
+> **Legacy method syntax** — the explicit method calls below are still supported but considered legacy. Prefer the property accessor syntax above.
+>
+> ```typescript
+> const posts   = await user.hasMany('posts');
+> const profile = await user.hasOne('profile');
+> const author  = await post.belongsTo('author');
+> ```
 
 ### Schema management
 
