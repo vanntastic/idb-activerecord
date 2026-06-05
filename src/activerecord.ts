@@ -84,6 +84,7 @@ export class ActiveRecord<_T = any> {
         if (request.result) {
           const instance = Object.create(this.prototype);
           Object.assign(instance, request.result);
+          ActiveRecord._defineRelationshipAccessors(instance);
           resolve(instance);
         } else {
           resolve(null);
@@ -109,6 +110,7 @@ export class ActiveRecord<_T = any> {
         results = results.map((item: any) => {
           const instance = Object.create(this.prototype);
           Object.assign(instance, item);
+          ActiveRecord._defineRelationshipAccessors(instance);
           return instance;
         });
         resolve(results);
@@ -133,6 +135,7 @@ export class ActiveRecord<_T = any> {
           .map((item: any) => {
             const instance = Object.create(this.prototype);
             Object.assign(instance, item);
+            ActiveRecord._defineRelationshipAccessors(instance);
             return instance;
           });
         resolve(results);
@@ -163,6 +166,7 @@ export class ActiveRecord<_T = any> {
       request.onsuccess = () => {
         const instance = Object.create(this.prototype);
         Object.assign(instance, data, { id: request.result });
+        ActiveRecord._defineRelationshipAccessors(instance);
 
         // Run afterCreate callback
         if (this.afterCreate) {
@@ -411,6 +415,37 @@ export class ActiveRecord<_T = any> {
     }
 
     return this.errors.length === 0;
+  }
+
+  private static _defineRelationshipAccessors(instance: any): void {
+    const constructor = instance.constructor as typeof ActiveRecord;
+    for (const key of Object.keys(constructor.hasOne ?? {})) {
+      if (!(key in instance)) {
+        Object.defineProperty(instance, key, {
+          get() { return (this as any).hasOne(key); },
+          configurable: true,
+          enumerable: false
+        });
+      }
+    }
+    for (const key of Object.keys(constructor.hasMany ?? {})) {
+      if (!(key in instance)) {
+        Object.defineProperty(instance, key, {
+          get() { return (this as any).hasMany(key); },
+          configurable: true,
+          enumerable: false
+        });
+      }
+    }
+    for (const key of Object.keys(constructor.belongsTo ?? {})) {
+      if (!(key in instance)) {
+        Object.defineProperty(instance, key, {
+          get() { return (this as any).belongsTo(key); },
+          configurable: true,
+          enumerable: false
+        });
+      }
+    }
   }
 
   // Relationship methods
