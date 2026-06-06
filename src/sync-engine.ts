@@ -34,7 +34,7 @@ export interface SyncMeta {
 export interface SyncChange {
   id?: number;
   table: string;
-  recordId: number;
+  recordId: string;
   action: 'create' | 'update' | 'delete';
   data: any;
   timestamp: string;
@@ -299,7 +299,7 @@ export class SyncEngine {
     if (pending.length === 0) return result;
 
     // Build payload from latest change per recordId (only the most recent action matters)
-    const latestById = new Map<number, SyncChange>();
+    const latestById = new Map<string, SyncChange>();
     for (const change of pending) {
       latestById.set(change.recordId, change);
     }
