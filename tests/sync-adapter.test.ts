@@ -53,8 +53,8 @@ describe('BaseAdapter', () => {
   describe('resolveConflict', () => {
     it('should return local with LOCAL_WINS', async () => {
       const adapter = new TestAdapter();
-      const local = { id: 1, name: 'local' };
-      const remote = { id: 1, name: 'remote' };
+      const local = { id: 'rec-1', name: 'local' };
+      const remote = { id: 'rec-1', name: 'remote' };
 
       const result = await adapter.resolveConflict(
         local as unknown as ActiveRecord,
@@ -66,8 +66,8 @@ describe('BaseAdapter', () => {
 
     it('should return remote with REMOTE_WINS', async () => {
       const adapter = new TestAdapter();
-      const local = { id: 1, name: 'local' };
-      const remote = { id: 1, name: 'remote' };
+      const local = { id: 'rec-1', name: 'local' };
+      const remote = { id: 'rec-1', name: 'remote' };
 
       const result = await adapter.resolveConflict(
         local as unknown as ActiveRecord,
@@ -79,8 +79,8 @@ describe('BaseAdapter', () => {
 
     it('should return the newer record with LAST_WRITE_WINS', async () => {
       const adapter = new TestAdapter();
-      const oldRecord = { id: 1, name: 'old', updatedAt: new Date('2024-01-01') };
-      const newRecord = { id: 1, name: 'new', updatedAt: new Date('2024-02-01') };
+      const oldRecord = { id: 'rec-1', name: 'old', updatedAt: new Date('2024-01-01') };
+      const newRecord = { id: 'rec-1', name: 'new', updatedAt: new Date('2024-02-01') };
 
       const result = await adapter.resolveConflict(
         oldRecord as unknown as ActiveRecord,
@@ -93,11 +93,11 @@ describe('BaseAdapter', () => {
     it('should use custom resolver', async () => {
       const adapter = new TestAdapter();
       adapter.setConflictResolver(async (_local, _remote) => {
-        return { id: 3, name: 'merged' };
+        return { id: 'rec-3', name: 'merged' };
       });
 
-      const local = { id: 1, name: 'local' };
-      const remote = { id: 2, name: 'remote' };
+      const local = { id: 'rec-1', name: 'local' };
+      const remote = { id: 'rec-2', name: 'remote' };
 
       const result = await adapter.resolveConflict(
         local as unknown as ActiveRecord,

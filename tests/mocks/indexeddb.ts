@@ -69,9 +69,13 @@ export class MockIDBObjectStore implements IDBObjectStore {
           if (info) info.nextId = this.nextId;
         }
       }
-      
+      // If no explicit key and not auto-incrementing, extract from value
+      if (!id && typeof this.keyPath === 'string') {
+        id = value[this.keyPath];
+      }
+
       const record = { ...value };
-      if (typeof this.keyPath === 'string') {
+      if (typeof this.keyPath === 'string' && id !== undefined) {
         record[this.keyPath] = id;
       }
       
@@ -305,7 +309,7 @@ export class MockIDBDatabase implements IDBDatabase {
   onerror: ((this: IDBDatabase, ev: Event) => any) | null = null;
   onversionchange: ((this: IDBDatabase, ev: Event) => any) | null = null;
 
-  stores: Map<string, { keyPath: string; autoIncrement: boolean; nextId: number; data: Map<any, any>; indexes: Map<string, Map<any, Set<any>>> }> = new Map();
+  stores: Map<string, { keyPath: string | string[]; autoIncrement: boolean; nextId: number; data: Map<any, any>; indexes: Map<string, Map<any, Set<any>>> }> = new Map();
 
   constructor(name: string, version: number) {
     this.name = name;

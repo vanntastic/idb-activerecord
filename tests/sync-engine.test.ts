@@ -80,7 +80,7 @@ function createMockDB(): IDBDatabase {
   });
   changeStore.createIndex('table', 'table', { unique: false });
   changeStore.createIndex('synced', 'synced', { unique: false });
-  (mockDb as any).createObjectStore('tasks', { keyPath: 'id', autoIncrement: true });
+  (mockDb as any).createObjectStore('tasks', { keyPath: 'id' });
 
   return mockDb;
 }
@@ -112,9 +112,9 @@ describe('SyncEngine', () => {
     const store = tx.objectStore('__sync_changes');
     store.add({
       table: 'tasks',
-      recordId: 1,
+      recordId: 'task-1',
       action: 'create',
-      data: { id: 1, title: 'Test', updatedAt: new Date().toISOString(), _version: 1 },
+      data: { id: 'task-1', title: 'Test', updatedAt: new Date().toISOString(), _version: 1 },
       timestamp: new Date().toISOString(),
       synced: false
     });
@@ -139,7 +139,7 @@ describe('SyncEngine', () => {
     const adapter = new TestAdapter();
     await adapter.connect({ url: 'http://test' });
     adapter.setRemoteData([
-      { id: 1, title: 'Remote Task', updatedAt: new Date().toISOString(), _version: 1 }
+      { id: 'task-1', title: 'Remote Task', updatedAt: new Date().toISOString(), _version: 1 }
     ]);
 
     const remote = await engine.pullChanges('tasks', adapter);
@@ -156,7 +156,7 @@ describe('SyncEngine', () => {
     await adapter.connect({ url: 'http://test' });
 
     const remote = [
-      { id: 1, title: 'Remote Task', updatedAt: new Date().toISOString(), _version: 1 }
+      { id: 'task-1', title: 'Remote Task', updatedAt: new Date().toISOString(), _version: 1 }
     ];
 
     const result = await engine.mergeChanges('tasks', remote, adapter, ConflictStrategy.LAST_WRITE_WINS);
@@ -166,7 +166,7 @@ describe('SyncEngine', () => {
     // Verify local store has the record
     const tx = mockDb.transaction(['tasks'], 'readonly');
     const store = tx.objectStore('tasks');
-    const req = store.get(1);
+    const req = store.get('task-1');
     await new Promise(r => setTimeout(r, 10));
     expect(req.result).toBeDefined();
     expect(req.result.title).toBe('Remote Task');
@@ -183,19 +183,19 @@ describe('SyncEngine', () => {
     // Pre-seed local record with lower version
     const tx = mockDb.transaction(['tasks'], 'readwrite');
     const store = tx.objectStore('tasks');
-    store.add({ id: 1, title: 'Local', updatedAt: '2024-01-01T00:00:00Z', _version: 1 });
+    store.add({ id: 'task-1', title: 'Local', updatedAt: '2024-01-01T00:00:00Z', _version: 1 });
     await new Promise(r => setTimeout(r, 10));
 
     // Remote has higher version
     const remote = [
-      { id: 1, title: 'Remote', updatedAt: '2024-02-01T00:00:00Z', _version: 2 }
+      { id: 'task-1', title: 'Remote', updatedAt: '2024-02-01T00:00:00Z', _version: 2 }
     ];
 
     await engine.mergeChanges('tasks', remote, adapter, ConflictStrategy.LAST_WRITE_WINS);
 
     const tx2 = mockDb.transaction(['tasks'], 'readonly');
     const store2 = tx2.objectStore('tasks');
-    const req = store2.get(1);
+    const req = store2.get('task-1');
     await new Promise(r => setTimeout(r, 10));
     expect(req.result.title).toBe('Remote');
   });
@@ -211,19 +211,19 @@ describe('SyncEngine', () => {
     // Pre-seed local record with higher version
     const tx = mockDb.transaction(['tasks'], 'readwrite');
     const store = tx.objectStore('tasks');
-    store.put({ id: 1, title: 'Local', updatedAt: '2024-02-01T00:00:00Z', _version: 3 });
+    store.put({ id: 'task-1', title: 'Local', updatedAt: '2024-02-01T00:00:00Z', _version: 3 });
     await new Promise(r => setTimeout(r, 10));
 
     // Remote has lower version
     const remote = [
-      { id: 1, title: 'Remote', updatedAt: '2024-01-01T00:00:00Z', _version: 2 }
+      { id: 'task-1', title: 'Remote', updatedAt: '2024-01-01T00:00:00Z', _version: 2 }
     ];
 
     await engine.mergeChanges('tasks', remote, adapter, ConflictStrategy.LAST_WRITE_WINS);
 
     const tx2 = mockDb.transaction(['tasks'], 'readonly');
     const store2 = tx2.objectStore('tasks');
-    const req = store2.get(1);
+    const req = store2.get('task-1');
     await new Promise(r => setTimeout(r, 10));
     expect(req.result.title).toBe('Local');
   });
@@ -239,19 +239,19 @@ describe('SyncEngine', () => {
     // Pre-seed local record
     const tx = mockDb.transaction(['tasks'], 'readwrite');
     const store = tx.objectStore('tasks');
-    store.add({ id: 1, title: 'To Delete', updatedAt: '2024-01-01T00:00:00Z', _version: 1 });
+    store.add({ id: 'task-1', title: 'To Delete', updatedAt: '2024-01-01T00:00:00Z', _version: 1 });
     await new Promise(r => setTimeout(r, 10));
 
     // Remote tombstone
     const remote = [
-      { id: 1, title: 'To Delete', updatedAt: '2024-02-01T00:00:00Z', _version: 2, _deletedAt: '2024-02-01T00:00:00Z' }
+      { id: 'task-1', title: 'To Delete', updatedAt: '2024-02-01T00:00:00Z', _version: 2, _deletedAt: '2024-02-01T00:00:00Z' }
     ];
 
     await engine.mergeChanges('tasks', remote, adapter, ConflictStrategy.LAST_WRITE_WINS);
 
     const tx2 = mockDb.transaction(['tasks'], 'readonly');
     const store2 = tx2.objectStore('tasks');
-    const req = store2.get(1);
+    const req = store2.get('task-1');
     await new Promise(r => setTimeout(r, 10));
     expect(req.result._deletedAt).toBeDefined();
   });
@@ -328,9 +328,9 @@ describe('SyncEngine', () => {
       const tx = mockDb.transaction(['__sync_changes'], 'readwrite');
       tx.objectStore('__sync_changes').add({
         table: 'tasks',
-        recordId: 1,
+        recordId: 'task-1',
         action: 'create',
-        data: { id: 1, title: 'Hello', status: 'pending', owner_id: 'alice', updatedAt: new Date().toISOString(), _version: 1 },
+        data: { id: 'task-1', title: 'Hello', status: 'pending', owner_id: 'alice', updatedAt: new Date().toISOString(), _version: 1 },
         timestamp: new Date().toISOString(),
         synced: false
       });
@@ -373,9 +373,9 @@ describe('SyncEngine', () => {
       const tx = mockDb.transaction(['__sync_changes'], 'readwrite');
       tx.objectStore('__sync_changes').add({
         table: 'tasks',
-        recordId: 1,
+        recordId: 'task-1',
         action: 'create',
-        data: { id: 1, title: 'Hello', extra: 42, updatedAt: new Date().toISOString(), _version: 1 },
+        data: { id: 'task-1', title: 'Hello', extra: 42, updatedAt: new Date().toISOString(), _version: 1 },
         timestamp: new Date().toISOString(),
         synced: false
       });
@@ -412,9 +412,9 @@ describe('SyncEngine', () => {
       const tx = mockDb.transaction(['__sync_changes'], 'readwrite');
       tx.objectStore('__sync_changes').add({
         table: 'tasks',
-        recordId: 1,
+        recordId: 'task-1',
         action: 'create',
-        data: { id: 1, title: 'Hello', extra: 42, updatedAt: new Date().toISOString(), _version: 1 },
+        data: { id: 'task-1', title: 'Hello', extra: 42, updatedAt: new Date().toISOString(), _version: 1 },
         timestamp: new Date().toISOString(),
         synced: false
       });
@@ -444,9 +444,9 @@ describe('SyncEngine', () => {
       const tx = mockDb.transaction(['__sync_changes'], 'readwrite');
       tx.objectStore('__sync_changes').add({
         table: 'tasks',
-        recordId: 1,
+        recordId: 'task-1',
         action: 'create',
-        data: { id: 1, title: 'Hello', priority: 5, done: true, updatedAt: new Date().toISOString(), _version: 1 },
+        data: { id: 'task-1', title: 'Hello', priority: 5, done: true, updatedAt: new Date().toISOString(), _version: 1 },
         timestamp: new Date().toISOString(),
         synced: false
       });
@@ -478,7 +478,7 @@ describe('SyncEngine', () => {
     // Seed some sync data
     const tx = mockDb.transaction(['__sync_changes', '__sync_meta'], 'readwrite');
     tx.objectStore('__sync_changes').add({
-      table: 'tasks', recordId: 1, action: 'create',
+      table: 'tasks', recordId: 'task-1', action: 'create',
       data: {}, timestamp: new Date().toISOString(), synced: false
     });
     tx.objectStore('__sync_meta').put({
