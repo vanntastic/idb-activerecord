@@ -28,7 +28,7 @@ export interface SyncServerRoutes {
   /** Override POST /:table */
   postTable?: (req: http.IncomingMessage, res: http.ServerResponse, table: string, records: any[]) => Promise<void> | void;
   /** Override DELETE /:table/:id */
-  deleteItem?: (req: http.IncomingMessage, res: http.ServerResponse, table: string, id: number) => Promise<void> | void;
+  deleteItem?: (req: http.IncomingMessage, res: http.ServerResponse, table: string, id: string) => Promise<void> | void;
 }
 
 const TABLE_RE = /^[a-z_][a-z0-9_]*$/i;
@@ -220,15 +220,15 @@ export class SyncServer {
     }
 
     // DELETE /:table/:id
-    const itemMatch = pathname.match(/^\/([a-z_][a-z0-9_]*)\/(\d+)$/i);
+    const itemMatch = pathname.match(/^\/([a-z_][a-z0-9_]*)\/([^\/]+)$/i);
     if (itemMatch && method === 'DELETE') {
       const [, table, idStr] = itemMatch;
       if (this.routes.deleteItem) {
-        return this.routes.deleteItem(req, res, table, Number(idStr));
+        return this.routes.deleteItem(req, res, table, idStr);
       }
       // Default implementation: soft delete via push
       try {
-        const result = await this.adapter.push([{ id: Number(idStr), _deletedAt: new Date().toISOString() } as any], { table });
+        const result = await this.adapter.push([{ id: idStr, _deletedAt: new Date().toISOString() } as any], { table });
         return sendJson(res, 200, { deleted: result.pushed });
       } catch (err) {
         return sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) });

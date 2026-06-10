@@ -361,7 +361,8 @@ describe('SyncEngine', () => {
 
       const idCol = capturedColumns!.find(c => c.name === 'id');
       expect(idCol.primaryKey).toBe(true);
-      expect(idCol.autoIncrement).toBe(true);
+      expect(idCol.type).toBe('string');
+      expect(idCol.autoIncrement).toBeUndefined();
     });
 
     it('declared SyncOptions.columns is strict: inferred columns are excluded', async () => {
