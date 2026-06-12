@@ -4,7 +4,7 @@ import { Database, ActiveRecord } from './src/index';
 
 // Define your model interface
 interface User {
-  id?: number;
+  id?: string;  // UUID format (e.g., 'f47ac10b-58cc-4372-a567-0e02b2c3d479')
   name: string;
   email: string;
   age: number;
