@@ -644,7 +644,7 @@ describe('SyncEngine', () => {
       const serverTask0 = serverAdapter['remoteData'].find((r: any) => r.id === 'task-0000');
       expect(serverTask0.title).toContain('(modified on laptop)');
       expect(serverTask0._version).toBe(2);
-    });
+    }, 30000); // 1000-record mock-IDB scenario is slow; override the default 5s timeout
 
     it('handles version conflicts when mobile has newer edits than laptop', async () => {
       // Scenario: Mobile and laptop both have the same task, but mobile edited it more recently
