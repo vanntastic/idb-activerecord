@@ -1,5 +1,26 @@
 # Changelog
 
+## [2.0.0](https://github.com/vanntastic/idb-activerecord/compare/v1.3.0...v2.0.0) (2026-06-13)
+
+
+### ⚠ BREAKING CHANGES
+
+* sync protocol now uses string-based UUIDs instead of auto-incrementing integers for primary keys. Update sync server route handlers and DELETE endpoint URL patterns to handle string IDs. Remove autoIncrement from sync meta columns.
+* id property changed from number to string (UUID format). All records now use string-based UUIDs instead of auto-incrementing integers. Update any code that depends on numeric ID behavior.
+* id property changed from number to string (UUID format). All records now use string-based UUIDs instead of auto-incrementing integers. Update any code that depends on numeric ID behavior.
+
+### Features
+
+* add global setup configuration for Playwright e2e tests ([c382ef2](https://github.com/vanntastic/idb-activerecord/commit/c382ef265210dd74927984c8c7ac1c2f30c2f3f8))
+* migrate from auto-increment numeric IDs to UUID-based IDs ([1505818](https://github.com/vanntastic/idb-activerecord/commit/150581813b5d384eae7c7bc9b5eac5c25bfd01b3))
+* migrate from auto-increment numeric IDs to UUID-based IDs ([e5b820b](https://github.com/vanntastic/idb-activerecord/commit/e5b820bb38890e5ef75a8b070407c7ed0d2e9a57))
+* migrate sync engine from auto-increment numeric IDs to UUID-based IDs ([6f1a157](https://github.com/vanntastic/idb-activerecord/commit/6f1a157da2f8b168e37bb6e75684d67c33abf98f))
+
+
+### Bug Fixes
+
+* update examples to handle UUID-based IDs instead of numeric IDs ([f46243f](https://github.com/vanntastic/idb-activerecord/commit/f46243f7e7e64808f887e580c314d42d3545e82b))
+
 ## [1.3.0](https://github.com/vanntastic/idb-activerecord/compare/v1.2.4...v1.3.0) (2026-06-05)
 
 
