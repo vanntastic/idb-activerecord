@@ -17,7 +17,7 @@ const SYNC_META_FIELDS = new Set([
 // Sync protocol meta columns — declared client-side so any backend that
 // honors POST /schema can host a sync target without hardcoding these fields.
 const SYNC_META_COLUMNS: ColumnDef[] = [
-  { name: 'id', type: 'integer', nullable: false, primaryKey: true, autoIncrement: true },
+  { name: 'id', type: 'string', nullable: false, primaryKey: true },
   { name: 'updatedAt', type: 'datetime', nullable: false, default: '' },
   { name: 'version', type: 'integer', nullable: false, default: 1 },
   { name: 'deleted_at', type: 'datetime', nullable: true },
@@ -34,7 +34,7 @@ export interface SyncMeta {
 export interface SyncChange {
   id?: number;
   table: string;
-  recordId: number;
+  recordId: string;
   action: 'create' | 'update' | 'delete';
   data: any;
   timestamp: string;
@@ -299,7 +299,7 @@ export class SyncEngine {
     if (pending.length === 0) return result;
 
     // Build payload from latest change per recordId (only the most recent action matters)
-    const latestById = new Map<number, SyncChange>();
+    const latestById = new Map<string, SyncChange>();
     for (const change of pending) {
       latestById.set(change.recordId, change);
     }

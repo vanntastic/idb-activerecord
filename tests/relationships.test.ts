@@ -25,7 +25,7 @@ describe('ActiveRecord Relationships', () => {
       }
 
       const user = Object.create(User.prototype);
-      Object.assign(user, { id: 1 });
+      Object.assign(user, { id: 'user-1' });
 
       await expect(user.hasOne('nonexistent')).rejects.toThrow(
         'Relationship nonexistent not defined in hasOne'
@@ -56,7 +56,7 @@ describe('ActiveRecord Relationships', () => {
       }
 
       const user = Object.create(User.prototype);
-      Object.assign(user, { id: 1 });
+      Object.assign(user, { id: 'user-1' });
 
       await expect(user.hasMany('nonexistent')).rejects.toThrow(
         'Relationship nonexistent not defined in hasMany'
@@ -87,7 +87,7 @@ describe('ActiveRecord Relationships', () => {
       }
 
       const post = Object.create(Post.prototype);
-      Object.assign(post, { id: 1 });
+      Object.assign(post, { id: 'post-1' });
 
       await expect(post.belongsTo('nonexistent')).rejects.toThrow(
         'Relationship nonexistent not defined in belongsTo'
@@ -107,7 +107,7 @@ describe('ActiveRecord Relationships', () => {
       }
 
       const post = Object.create(Post.prototype);
-      Object.assign(post, { id: 1, authorId: undefined });
+      Object.assign(post, { id: 'post-1', authorId: undefined });
 
       const result = await post.belongsTo('author');
       expect(result).toBeNull();
@@ -126,7 +126,7 @@ describe('ActiveRecord Relationships', () => {
       }
 
       const user = Object.create(User.prototype);
-      Object.assign(user, { id: 1 });
+      Object.assign(user, { id: 'user-1' });
       (ActiveRecord as any)._defineRelationshipAccessors(user);
 
       const descriptor = Object.getOwnPropertyDescriptor(user, 'profile');
@@ -145,10 +145,10 @@ describe('ActiveRecord Relationships', () => {
       }
 
       const user = Object.create(User.prototype);
-      Object.assign(user, { id: 1 });
+      Object.assign(user, { id: 'user-1' });
       (ActiveRecord as any)._defineRelationshipAccessors(user);
 
-      const spy = vi.spyOn(user, 'hasOne').mockResolvedValue({ id: 10 });
+      const spy = vi.spyOn(user, 'hasOne').mockResolvedValue({ id: 'profile-1' });
       void user.profile;
       expect(spy).toHaveBeenCalledWith('profile');
     });
@@ -164,7 +164,7 @@ describe('ActiveRecord Relationships', () => {
       }
 
       const user = Object.create(User.prototype);
-      Object.assign(user, { id: 1 });
+      Object.assign(user, { id: 'user-1' });
       (ActiveRecord as any)._defineRelationshipAccessors(user);
 
       const descriptor = Object.getOwnPropertyDescriptor(user, 'posts');
@@ -183,7 +183,7 @@ describe('ActiveRecord Relationships', () => {
       }
 
       const user = Object.create(User.prototype);
-      Object.assign(user, { id: 1 });
+      Object.assign(user, { id: 'user-1' });
       (ActiveRecord as any)._defineRelationshipAccessors(user);
 
       const spy = vi.spyOn(user, 'hasMany').mockResolvedValue([]);
@@ -202,7 +202,7 @@ describe('ActiveRecord Relationships', () => {
       }
 
       const post = Object.create(Post.prototype);
-      Object.assign(post, { id: 1, authorId: 2 });
+      Object.assign(post, { id: 'post-1', authorId: 'author-1' });
       (ActiveRecord as any)._defineRelationshipAccessors(post);
 
       const descriptor = Object.getOwnPropertyDescriptor(post, 'author');
@@ -221,10 +221,10 @@ describe('ActiveRecord Relationships', () => {
       }
 
       const post = Object.create(Post.prototype);
-      Object.assign(post, { id: 1, authorId: 2 });
+      Object.assign(post, { id: 'post-1', authorId: 'author-1' });
       (ActiveRecord as any)._defineRelationshipAccessors(post);
 
-      const spy = vi.spyOn(post, 'belongsTo').mockResolvedValue({ id: 2 });
+      const spy = vi.spyOn(post, 'belongsTo').mockResolvedValue({ id: 'author-1' });
       void post.author;
       expect(spy).toHaveBeenCalledWith('author');
     });
@@ -240,7 +240,7 @@ describe('ActiveRecord Relationships', () => {
       }
 
       const user = Object.create(User.prototype);
-      Object.assign(user, { id: 1, posts: 'already-set' });
+      Object.assign(user, { id: 'user-1', posts: 'already-set' });
       (ActiveRecord as any)._defineRelationshipAccessors(user);
 
       expect(user.posts).toBe('already-set');
@@ -257,7 +257,7 @@ describe('ActiveRecord Relationships', () => {
       }
 
       const post = Object.create(Post.prototype);
-      Object.assign(post, { id: 1, authorId: undefined });
+      Object.assign(post, { id: 'post-1', authorId: undefined });
       (ActiveRecord as any)._defineRelationshipAccessors(post);
 
       const result = await post.belongsTo('author');

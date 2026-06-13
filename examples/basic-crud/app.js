@@ -101,7 +101,7 @@ window.findUser = async function() {
     return;
   }
 
-  const id = parseInt(document.getElementById('findUserId').value);
+  const id = document.getElementById('findUserId').value.trim();
   if (!id) {
     alert('Please enter a user ID');
     return;
@@ -109,7 +109,7 @@ window.findUser = async function() {
 
   try {
     const user = await User.find(id);
-    displayOutput('findOutput', user || 'User not found');
+    displayOutput('findOutput', user ?? 'User not found');
   } catch (error) {
     console.error('Error finding user:', error);
     displayOutput('findOutput', { error: error.message });
@@ -156,7 +156,7 @@ window.loadAllUsers = async function() {
         <div>
           <strong>${user.name}</strong> (${user.email}) - Age: ${user.age}
         </div>
-        <button onclick="deleteUserById(${user.id})">Delete</button>
+        <button onclick="deleteUserById('${user.id}')">Delete</button>
       `;
       userList.appendChild(li);
     });
@@ -172,7 +172,7 @@ window.updateUser = async function() {
     return;
   }
 
-  const id = parseInt(document.getElementById('updateUserId').value);
+  const id = document.getElementById('updateUserId').value.trim();
   const age = parseInt(document.getElementById('updateAge').value);
 
   if (!id || !age) {
@@ -204,7 +204,7 @@ window.deleteUser = async function() {
     return;
   }
 
-  const id = parseInt(document.getElementById('deleteUserId').value);
+  const id = document.getElementById('deleteUserId').value.trim();
   if (!id) {
     alert('Please enter a user ID');
     return;

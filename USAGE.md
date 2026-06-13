@@ -15,7 +15,7 @@ import { Database, ActiveRecord } from 'idb-activerecord';
 
 // Define your model interface
 interface User {
-  id?: number;
+  id?: string;  // UUID format (e.g., 'f47ac10b-58cc-4372-a567-0e02b2c3d479')
   name: string;
   email: string;
 }
@@ -39,14 +39,14 @@ const user = await User.create({
   name: 'John Doe',
   email: 'john@example.com'
 });
-console.log(user.id); // Auto-generated ID
+console.log(user.id); // Auto-generated UUID, e.g. 'f47ac10b-58cc-4372-a567-0e02b2c3d479'
 ```
 
 ## Reading Records
 
 ```typescript
-// Find by ID
-const user = await User.find(1);
+// Find by ID (UUID string)
+const user = await User.find('f47ac10b-58cc-4372-a567-0e02b2c3d479');
 
 // Find all records
 const users = await User.all();
@@ -192,7 +192,7 @@ The library is fully typed. Define your model interface for type safety:
 
 ```typescript
 interface Post {
-  id?: number;
+  id?: string;  // UUID format
   title: string;
   content: string;
   published: boolean;

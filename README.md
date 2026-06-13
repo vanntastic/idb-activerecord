@@ -36,7 +36,7 @@ pnpm add idb-activerecord
 **CDN (via jsDelivr)**
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/idb-activerecord@1/dist/idb-activerecord.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/idb-activerecord@2/dist/idb-activerecord.min.js"></script>
 ```
 
 All exports are available under the global `IDBActiveRecord` object:
@@ -47,6 +47,26 @@ All exports are available under the global `IDBActiveRecord` object:
 </script>
 ```
 
+## Migration from v1.x to v2.x
+
+**Breaking Change:** IDs have changed from `number` (auto-incrementing) to `string` (UUID format).
+
+| Before (v1.x) | After (v2.x) |
+|---------------|--------------|
+| `id?: number` | `id?: string` |
+| `await User.find(1)` | `await User.find('uuid-string')` |
+| Auto-generated sequential integers | Auto-generated UUIDs (e.g., `'f47ac10b-58cc-4372-a567-0e02b2c3d479'`) |
+
+**What you need to change:**
+- Update TypeScript interfaces: change `id?: number` to `id?: string`
+- Update any code that performs arithmetic on IDs
+- Update any external sync servers that expected numeric IDs
+
+**Benefits:**
+- Better multi-user sync (no ID collisions)
+- Offline-first support (generate IDs without server)
+- Distributed systems friendly
+
 ## Quick Start
 
 ### With npm (TypeScript / ESM)
@@ -56,7 +76,7 @@ import { ActiveRecord, Database } from 'idb-activerecord';
 
 // Define your model
 interface User {
-  id?: number;
+  id?: string;  // UUID format (e.g., 'f47ac10b-58cc-4372-a567-0e02b2c3d479')
   name: string;
   email: string;
   age: number;
@@ -85,8 +105,8 @@ const user = await User.create({
   age: 30
 });
 
-// Find a record
-const foundUser = await User.find(1);
+// Find a record by UUID
+const foundUser = await User.find(user.id);
 
 // Update a record
 await user.update({ age: 31 });
@@ -104,7 +124,7 @@ const adults = await User.where('age', '>=', 18).all();
 <!DOCTYPE html>
 <html>
 <head>
-  <script src="https://cdn.jsdelivr.net/npm/idb-activerecord@1/dist/idb-activerecord.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/idb-activerecord@2/dist/idb-activerecord.min.js"></script>
 </head>
 <body>
   <p>To view the database: open your devTools > Application > IndexedDB > my-app > users</p>
@@ -186,7 +206,7 @@ Each entry under `columns` accepts these optional fields:
 | `primaryKey` | `boolean` | `false` | Marks the field as the primary key |
 | `autoIncrement` | `boolean` | `false` | Auto-incrementing integer (for primary keys) |
 
-You don't need to declare `id` — it's added automatically as an auto-incrementing primary key.
+You don't need to declare `id` — it's added automatically as a UUID primary key. When creating records, a UUID is generated automatically if you don't provide one.
 
 ### Schema-less mode
 
@@ -219,8 +239,8 @@ const user = await User.create({
 #### Read
 
 ```typescript
-// Find by ID
-const user = await User.find(1);
+// Find by ID (UUID string)
+const user = await User.find('f47ac10b-58cc-4372-a567-0e02b2c3d479');
 
 // Find all
 const users = await User.all();
@@ -296,11 +316,11 @@ class User extends ActiveRecord<User> {
 }
 
 // Access relationships via property syntax (recommended)
-const user = await User.find(1);
+const user = await User.find(userId);
 const posts = await user.posts;        // hasMany
 const profile = await user.profile;   // hasOne
 
-const post = await Post.find(1);
+const post = await Post.find(postId);
 const author = await post.author;     // belongsTo
 ```
 

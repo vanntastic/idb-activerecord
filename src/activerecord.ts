@@ -4,7 +4,7 @@ import { QueryBuilder } from './query-builder.js';
 import { ValidationRule } from './types.js';
 
 export class ActiveRecord<_T = any> {
-  id?: number;
+  id?: string;
   _version?: number;
   _deletedAt?: string | null;
   updatedAt?: string;
@@ -72,7 +72,7 @@ export class ActiveRecord<_T = any> {
     this.db = db;
   }
 
-  static async find(id: number): Promise<any> {
+  static async find(id: string): Promise<any> {
     if (!this.db) throw new Error('Database not connected');
 
     return new Promise((resolve, reject) => {
@@ -144,8 +144,24 @@ export class ActiveRecord<_T = any> {
     });
   }
 
+  private static generateUUID(): string {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+      return crypto.randomUUID();
+    }
+    // Fallback for environments without crypto.randomUUID
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+      const r = Math.random() * 16 | 0;
+      const v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  }
+
   static async create(data: any): Promise<any> {
     if (!this.db) throw new Error('Database not connected');
+
+    // Generate UUID if not provided
+    const id = data.id || ActiveRecord.generateUUID();
+    data.id = id;
 
     // Auto-set timestamps and version for sync-enabled models
     if (this.enableSync) {
@@ -165,7 +181,7 @@ export class ActiveRecord<_T = any> {
 
       request.onsuccess = () => {
         const instance = Object.create(this.prototype);
-        Object.assign(instance, data, { id: request.result });
+        Object.assign(instance, data);
         ActiveRecord._defineRelationshipAccessors(instance);
 
         // Run afterCreate callback
@@ -175,7 +191,7 @@ export class ActiveRecord<_T = any> {
 
         // Log change for sync tracking
         if (this.enableSync) {
-          ActiveRecord.logChange(this.db!, this.tableName, request.result as number, 'create', instance);
+          ActiveRecord.logChange(this.db!, this.tableName, id, 'create', instance);
         }
 
         resolve(instance);
@@ -311,7 +327,7 @@ export class ActiveRecord<_T = any> {
     });
   }
 
-  static async restore(id: number): Promise<void> {
+  static async restore(id: string): Promise<void> {
     if (!this.db) throw new Error('Database not connected');
     if (!this.softDelete) throw new Error('softDelete is not enabled');
 
@@ -360,7 +376,7 @@ export class ActiveRecord<_T = any> {
   private static logChange(
     db: IDBDatabase,
     table: string,
-    recordId: number,
+    recordId: string | number,
     action: 'create' | 'update' | 'delete',
     data: any
   ): void {

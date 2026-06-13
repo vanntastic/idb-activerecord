@@ -192,8 +192,8 @@ async function restoreNote(id) {
 }
 
 async function renderNotes() {
-  const notes = (await Note.where('owner_id', '=', currentUser).all()).sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || a.id - b.id);
-  const deleted = (await Note.onlyDeleted()).filter(n => n.owner_id === currentUser).sort((a, b) => a.id - b.id);
+  const notes = (await Note.where('owner_id', '=', currentUser).all()).sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || String(a.id).localeCompare(String(b.id)));
+  const deleted = (await Note.onlyDeleted()).filter(n => n.owner_id === currentUser).sort((a, b) => String(a.id).localeCompare(String(b.id)));
   const list = document.getElementById('noteList');
   list.innerHTML = '';
 
@@ -209,8 +209,8 @@ async function renderNotes() {
       <span class="task-title">${escapeHtml(note.content)}</span>
       <span class="task-meta">v${note._version || 1}</span>
       <span class="task-status">${note.pinned ? '📌 pinned' : 'note'}</span>
-      <button class="toggle-btn" onclick="togglePin(${note.id})">${note.pinned ? 'Unpin' : 'Pin'}</button>
-      <button class="delete-btn" onclick="deleteNote(${note.id})">Delete</button>
+      <button class="toggle-btn" onclick="togglePin('${note.id}')">${note.pinned ? 'Unpin' : 'Pin'}</button>
+      <button class="delete-btn" onclick="deleteNote('${note.id}')">Delete</button>
     `;
     list.appendChild(li);
   });
@@ -228,7 +228,7 @@ async function renderNotes() {
         <span class="task-title">${escapeHtml(note.content)}</span>
         <span class="task-meta">v${note._version || 1}</span>
         <span class="task-status">deleted</span>
-        <button class="toggle-btn" onclick="restoreNote(${note.id})">Restore</button>
+        <button class="toggle-btn" onclick="restoreNote('${note.id}')">Restore</button>
       `;
       list.appendChild(li);
     });
@@ -257,7 +257,7 @@ async function deleteLabel(id) {
 }
 
 async function renderLabels() {
-  const labels = (await Label.where('owner_id', '=', currentUser).all()).sort((a, b) => a.id - b.id);
+  const labels = (await Label.where('owner_id', '=', currentUser).all()).sort((a, b) => String(a.id).localeCompare(String(b.id)));
   const list = document.getElementById('labelList');
   list.innerHTML = '';
 
@@ -273,15 +273,15 @@ async function renderLabels() {
       <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${escapeHtml(label.color || '#6366f1')};flex-shrink:0"></span>
       <span class="task-title">${escapeHtml(label.name)}</span>
       <span class="task-meta">v${label._version || 1}</span>
-      <button class="delete-btn" onclick="deleteLabel(${label.id})">Delete</button>
+      <button class="delete-btn" onclick="deleteLabel('${label.id}')">Delete</button>
     `;
     list.appendChild(li);
   });
 }
 
 async function renderTasks() {
-  const tasks = (await Task.where('owner_id', '=', currentUser).all()).sort((a, b) => a.id - b.id);
-  const deleted = (await Task.onlyDeleted()).filter(t => t.owner_id === currentUser).sort((a, b) => a.id - b.id);
+  const tasks = (await Task.where('owner_id', '=', currentUser).all()).sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  const deleted = (await Task.onlyDeleted()).filter(t => t.owner_id === currentUser).sort((a, b) => String(a.id).localeCompare(String(b.id)));
   const list = document.getElementById('taskList');
   list.innerHTML = '';
 
@@ -297,8 +297,8 @@ async function renderTasks() {
       <span class="task-title">${escapeHtml(task.title)}</span>
       <span class="task-meta">v${task._version || 1}</span>
       <span class="task-status">${task.status}</span>
-      <button class="toggle-btn" onclick="toggleTask(${task.id})">${task.status === 'done' ? 'Undo' : 'Done'}</button>
-      <button class="delete-btn" onclick="deleteTask(${task.id})">Delete</button>
+      <button class="toggle-btn" onclick="toggleTask('${task.id}')">${task.status === 'done' ? 'Undo' : 'Done'}</button>
+      <button class="delete-btn" onclick="deleteTask('${task.id}')">Delete</button>
     `;
     list.appendChild(li);
   });
@@ -316,7 +316,7 @@ async function renderTasks() {
         <span class="task-title">${escapeHtml(task.title)}</span>
         <span class="task-meta">v${task._version || 1}</span>
         <span class="task-status">deleted</span>
-        <button class="toggle-btn" onclick="restoreTask(${task.id})">Restore</button>
+        <button class="toggle-btn" onclick="restoreTask('${task.id}')">Restore</button>
       `;
       list.appendChild(li);
     });

@@ -86,7 +86,7 @@ describe('SQLiteAdapter (HTTP mode)', () => {
   describe('push — table name validation (buildUrl)', () => {
     it('throws for invalid table name via push', async () => {
       const adapter = await makeHttpAdapter();
-      const records = [{ id: 1, title: 'x' }] as any;
+      const records = [{ id: 'task-1', title: 'x' }] as any;
       await expect(adapter.push(records, { table: '../evil; DROP TABLE tasks;' })).rejects.toThrow(/Invalid table name/i);
     });
   });
