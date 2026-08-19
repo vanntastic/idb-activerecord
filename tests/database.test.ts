@@ -41,6 +41,86 @@ describe('Database', () => {
     expect((db as any).models.has('test_models')).toBe(true);
   });
 
+  it('should set model registry when registering a model', () => {
+    db = new Database('test-db', 1);
+
+    class Board extends ActiveRecord<any> {
+      static tableName = 'boards';
+    }
+
+    db.registerModel(Board);
+    expect((Board as any)._modelRegistry).toBe((db as any).models);
+  });
+
+  it('should validate string relationship references', () => {
+    db = new Database('test-db', 1);
+
+    class Board extends ActiveRecord<any> {
+      static tableName = 'boards';
+      static hasMany = { columns: 'columns' };
+    }
+
+    class Column extends ActiveRecord<any> {
+      static tableName = 'columns';
+      static belongsTo = { board: 'boards' };
+    }
+
+    db.registerModel(Board);
+    db.registerModel(Column);
+
+    // Private validation should pass for valid string refs
+    expect(() => (db as any).validateRelationships()).not.toThrow();
+
+    // Unknown table should throw
+    class BadModel extends ActiveRecord<any> {
+      static tableName = 'bad';
+      static hasOne = { owner: 'nonexistent' };
+    }
+
+    const badDb = new Database('bad-db', 1);
+    badDb.registerModel(BadModel);
+    expect(() => (badDb as any).validateRelationships()).toThrow(
+      'bad.hasOne.owner references unknown table "nonexistent"'
+    );
+  });
+
+  it('resolves board.columns and column.board via string-reference relationships', async () => {
+    db = new Database('relationships-db', 1);
+
+    class Board extends ActiveRecord<any> {
+      static tableName = 'boards';
+      static hasMany = { columns: 'columns' };
+    }
+
+    class Column extends ActiveRecord<any> {
+      static tableName = 'columns';
+      static belongsTo = { board: 'boards' };
+    }
+
+    const mockDb = new MockIDBDatabase('relationships-db', 1) as unknown as IDBDatabase;
+    (mockDb as any).createObjectStore('boards', { keyPath: 'id', autoIncrement: false });
+    (mockDb as any).createObjectStore('columns', { keyPath: 'id', autoIncrement: false });
+    (db as any).db = mockDb;
+
+    db.registerModel(Board);
+    db.registerModel(Column);
+
+    const board = await Board.create({ id: 'board-1', title: 'Sprint 1' });
+    // boardsId satisfies Board.hasMany.columns (tableName + "Id");
+    // boardId satisfies Column.belongsTo.board (relationship name + "Id").
+    await Column.create({ id: 'col-1', title: 'To Do', boardsId: 'board-1', boardId: 'board-1' });
+    await Column.create({ id: 'col-2', title: 'Done', boardsId: 'board-1', boardId: 'board-1' });
+
+    const columns = await board.columns;
+    expect(columns).toHaveLength(2);
+    expect(columns.map((c: any) => c.id).sort()).toEqual(['col-1', 'col-2']);
+
+    const column = await Column.find('col-1');
+    const parentBoard = await column.board;
+    expect(parentBoard.id).toBe('board-1');
+    expect(parentBoard.title).toBe('Sprint 1');
+  });
+
   it('should throw error when getting DB without connection', () => {
     db = new Database('test-db', 1);
     expect(() => db.getDB()).toThrow('Database not connected');

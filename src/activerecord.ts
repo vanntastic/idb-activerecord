@@ -9,6 +9,7 @@ export class ActiveRecord<_T = any> {
   _deletedAt?: string | null;
   updatedAt?: string;
   protected static db: IDBDatabase | null = null;
+  protected static _modelRegistry: Map<string, any> | null = null;
   protected static tableName: string = '';
   protected static indexes: any[] = [];
   protected static belongsTo: Record<string, any> = {};
@@ -70,6 +71,10 @@ export class ActiveRecord<_T = any> {
 
   static setDatabase(db: IDBDatabase): void {
     this.db = db;
+  }
+
+  static setModelRegistry(models: Map<string, any>): void {
+    this._modelRegistry = models;
   }
 
   static async find(id: string): Promise<any> {
@@ -464,14 +469,40 @@ export class ActiveRecord<_T = any> {
     }
   }
 
+  private static _resolveRelationship(
+    constructor: typeof ActiveRecord,
+    relationshipName: string,
+    kind: 'hasOne' | 'hasMany' | 'belongsTo'
+  ): any {
+    const definitions = (constructor as any)[kind] as Record<string, any>;
+    let relatedModel = definitions?.[relationshipName];
+
+    if (!relatedModel) {
+      throw new Error(`Relationship ${relationshipName} not defined in ${kind}`);
+    }
+
+    if (typeof relatedModel === 'string') {
+      const resolved = constructor._modelRegistry?.get(relatedModel);
+      if (!resolved) {
+        throw new Error(
+          `Relationship ${relationshipName} references unknown table "${relatedModel}". ` +
+          `Make sure the model is registered before resolving relationships.`
+        );
+      }
+      relatedModel = resolved;
+    }
+
+    if (!relatedModel.tableName) {
+      throw new Error(`Relationship ${relationshipName} does not reference a valid ActiveRecord`);
+    }
+
+    return relatedModel;
+  }
+
   // Relationship methods
   async hasOne(relationshipName: string): Promise<any> {
     const constructor = this.constructor as typeof ActiveRecord;
-    const relatedModel = constructor.hasOne?.[relationshipName];
-    
-    if (!relatedModel) {
-      throw new Error(`Relationship ${relationshipName} not defined in hasOne`);
-    }
+    const relatedModel = ActiveRecord._resolveRelationship(constructor, relationshipName, 'hasOne');
 
     const foreignKey = `${constructor.tableName}Id`;
     return await relatedModel.where(foreignKey, this.id).first();
@@ -479,11 +510,7 @@ export class ActiveRecord<_T = any> {
 
   async hasMany(relationshipName: string): Promise<any[]> {
     const constructor = this.constructor as typeof ActiveRecord;
-    const relatedModel = constructor.hasMany?.[relationshipName];
-    
-    if (!relatedModel) {
-      throw new Error(`Relationship ${relationshipName} not defined in hasMany`);
-    }
+    const relatedModel = ActiveRecord._resolveRelationship(constructor, relationshipName, 'hasMany');
 
     const foreignKey = `${constructor.tableName}Id`;
     return await relatedModel.where(foreignKey, this.id).all();
@@ -491,17 +518,13 @@ export class ActiveRecord<_T = any> {
 
   async belongsTo(relationshipName: string): Promise<any> {
     const constructor = this.constructor as typeof ActiveRecord;
-    const relatedModel = constructor.belongsTo?.[relationshipName];
-    
-    if (!relatedModel) {
-      throw new Error(`Relationship ${relationshipName} not defined in belongsTo`);
-    }
+    const relatedModel = ActiveRecord._resolveRelationship(constructor, relationshipName, 'belongsTo');
 
     const foreignKey = `${relationshipName}Id`;
     const foreignId = (this as any)[foreignKey];
-    
+
     if (!foreignId) return null;
-    
+
     return await relatedModel.find(foreignId);
   }
 
