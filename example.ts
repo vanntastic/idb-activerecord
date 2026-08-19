@@ -13,30 +13,51 @@ interface User {
 // Create a model class
 class User extends ActiveRecord<User> {
   static tableName = 'users';
-  
+
   static indexes = [
     { name: 'email_index', keyPath: 'email', unique: true },
     { name: 'age_index', keyPath: 'age' }
   ];
-  
+
   static validates = {
     name: { presence: true, length: { minimum: 2 } },
     email: { presence: true, format: /@/ }
   };
-  
+
   static beforeCreate = (record: any) => {
     console.log('Before create:', record);
   };
-  
+
   static afterCreate = (record: any) => {
     console.log('After create:', record);
   };
+
+  // String references avoid circular imports between User and Post.
+  static hasMany = { posts: 'posts' };
+}
+
+interface Post {
+  id?: string;
+  title: string;
+  content: string;
+  // hasMany foreign key convention: `${User.tableName}Id` -> 'usersId'
+  usersId: string;
+  // belongsTo foreign key convention: `${relationshipName}Id` -> 'authorId'
+  authorId: string;
+}
+
+class Post extends ActiveRecord<Post> {
+  static tableName = 'posts';
+
+  // String reference to the 'users' table — resolved via Database's model registry.
+  static belongsTo = { author: 'users' };
 }
 
 async function main() {
   // Initialize the database
   const db = new Database('my-app', 1);
   db.registerModel(User);
+  db.registerModel(Post);
   await db.connect();
 
   try {
@@ -47,6 +68,20 @@ async function main() {
       age: 30
     });
     console.log('Created user:', user);
+
+    // Relationships (string references resolved via the model registry)
+    const post = await Post.create({
+      title: 'Hello World',
+      content: 'My first post',
+      usersId: user.id!,
+      authorId: user.id!
+    });
+
+    const userPosts = await user.posts;
+    console.log('User posts:', userPosts);
+
+    const author = await post.author;
+    console.log('Post author:', author);
 
     // Find a record
     const foundUser = await User.find(user.id!);

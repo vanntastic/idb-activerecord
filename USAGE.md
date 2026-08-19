@@ -167,6 +167,50 @@ if (!valid) {
 }
 ```
 
+## Relationships
+
+Declare `hasOne`, `hasMany`, and `belongsTo` associations using string references (the related model's `tableName`) instead of direct class imports — this avoids circular dependency issues:
+
+```typescript
+class User extends ActiveRecord<User> {
+  static tableName = 'users';
+  static hasMany = { posts: 'posts' }; // string, not a class reference
+}
+
+class Post extends ActiveRecord<Post> {
+  static tableName = 'posts';
+  static belongsTo = { author: 'users' };
+}
+
+const db = new Database('my-app', 1);
+db.registerModel(User);
+db.registerModel(Post);
+await db.connect(); // throws if any string reference points to an unregistered table
+```
+
+Foreign key conventions:
+- `hasOne` / `hasMany` look up `${declaringModel.tableName}Id` (e.g. `User.hasMany.posts` looks for `Post` records with `usersId`)
+- `belongsTo` looks up `${relationshipName}Id` (e.g. `Post.belongsTo.author` looks for an `authorId` field)
+
+Access relationships either as async methods or as Rails-style property accessors:
+
+```typescript
+const posts = await user.hasMany('posts'); // explicit method
+const posts2 = await user.posts;           // property accessor (same result)
+
+const author = await post.belongsTo('author');
+const author2 = await post.author;
+```
+
+Class references still work if you don't need to avoid circular imports:
+
+```typescript
+class Post extends ActiveRecord<Post> {
+  static tableName = 'posts';
+  static belongsTo = { author: User };
+}
+```
+
 ## Custom Indexes
 
 ```typescript
