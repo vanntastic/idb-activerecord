@@ -76,10 +76,12 @@ export class Database {
       request.onerror = () => reject(request.error);
       request.onsuccess = () => {
         this.db = request.result;
-        // Set database on all registered models
+        // Set database and model registry on all registered models
         this.models.forEach((model) => {
           model.setDatabase(this.db!);
+          model.setModelRegistry(this.models);
         });
+        this.validateRelationships();
         resolve();
       };
 
@@ -92,8 +94,27 @@ export class Database {
 
   registerModel(model: any): void {
     this.models.set(model.tableName, model);
+    model.setModelRegistry(this.models);
     if (this.db) {
       model.setDatabase(this.db);
+    }
+  }
+
+  private validateRelationships(): void {
+    const relationshipKinds = ['hasOne', 'hasMany', 'belongsTo'] as const;
+    for (const [tableName, model] of this.models) {
+      for (const kind of relationshipKinds) {
+        const definitions = model[kind] as Record<string, unknown> | undefined;
+        if (!definitions) continue;
+        for (const [relationshipName, relatedModel] of Object.entries(definitions)) {
+          if (typeof relatedModel !== 'string') continue;
+          if (!this.models.has(relatedModel)) {
+            throw new Error(
+              `${tableName}.${kind}.${relationshipName} references unknown table "${relatedModel}"`
+            );
+          }
+        }
+      }
     }
   }
 

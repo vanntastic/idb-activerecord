@@ -212,6 +212,35 @@ You don't need to declare `id` — it's added automatically as a UUID primary ke
 
 If you omit `static columns`, the model is schema-less — any field you put on a record is stored as-is, and (when syncing) columns are inferred from records at sync time. This is convenient for prototyping but means fresh clients can't sync the schema until at least one record exists locally, and there's no protection against typos in field names. **Declaring columns is recommended for any real app.**
 
+### Relationships
+
+Models can declare `hasOne`, `hasMany`, and `belongsTo` associations. Use string references (the related model's `tableName`) to avoid circular import issues:
+
+```typescript
+class Board extends ActiveRecord<Board> {
+  static tableName = 'boards';
+  static hasMany = { columns: 'columns' };
+}
+
+class Column extends ActiveRecord<Column> {
+  static tableName = 'columns';
+  static belongsTo = { board: 'boards' };
+  static hasMany = { cards: 'cards' };
+}
+
+class Card extends ActiveRecord<Card> {
+  static tableName = 'cards';
+  static belongsTo = { column: 'columns' };
+}
+```
+
+Relationship references are resolved at query time against `Database`'s internal model registry. If a string references an unknown table, `Database.connect()` throws with a clear error. Class references continue to work as before.
+
+Foreign keys follow these conventions:
+
+- `belongsTo` uses the relationship name: a `Column` with `belongsTo = { board: 'boards' }` should have a `boardId` field.
+- `hasOne` / `hasMany` use the declaring model's `tableName`: a `Board` with `tableName = 'boards'` and `hasMany = { columns: 'columns' }` looks for `Column` records whose `boardsId` matches the board's `id`.
+
 ## API Reference
 
 ### Database
