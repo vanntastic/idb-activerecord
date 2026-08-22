@@ -1,6 +1,6 @@
 {
   "name": "idb-activerecord",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "ActiveRecord-style API for IndexedDB with TypeScript support",
   "license": "ISC",
   "author": "Vann Ek",

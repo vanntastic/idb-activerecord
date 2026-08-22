@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.1.0](https://github.com/vanntastic/idb-activerecord/compare/v2.0.0...v2.1.0) (2026-08-22)
+
+
+### Features
+
+* add string-based relationship references to avoid circular import issues ([48e1f62](https://github.com/vanntastic/idb-activerecord/commit/48e1f62))
+
+
+### Documentation
+
+* add relationship examples to USAGE.md and example.ts demonstrating string-based model references ([364690c](https://github.com/vanntastic/idb-activerecord/commit/364690c))
+
 ## [2.0.0](https://github.com/vanntastic/idb-activerecord/compare/v1.3.0...v2.0.0) (2026-06-13)
 
 
