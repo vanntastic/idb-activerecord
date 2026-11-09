@@ -2,7 +2,7 @@
 
 A modern, type-safe ActiveRecord-style API for IndexedDB in JavaScript and TypeScript.
 
-Read the [documentation](https://vanntastic.github.io/idb-activerecord/) for guides, sync setup, and examples. To develop the documentation locally, run `npm install` and `npm run docs:dev`; use `npm run docs:build` to check the production site.
+Read the [documentation](https://vanntastic.github.io/idb-activerecord/) for guides, sync setup, and examples. To develop the documentation locally, run `npm install` and `npm run docs:dev`; use `npm run docs:build` to check the production site, or install Playwright's browser with `npx playwright install chromium` and run `npm run docs:screenshots` to build it, serve it locally, and capture screenshots in `.docs-screenshots/`.
 
 ## Overview
 
