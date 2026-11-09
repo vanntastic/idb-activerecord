@@ -44,7 +44,10 @@
     "example": "node examples/run-all.js",
     "example:static": "node examples/server.js",
     "example:sqlite": "node examples/sqlite-sync/server.js",
-    "example:turso": "node examples/turso-sync/run.js"
+    "example:turso": "node examples/turso-sync/run.js",
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs"
   },
   "keywords": [
     "indexeddb",
@@ -67,6 +70,12 @@
     "esbuild": "^0.28.0",
     "jsdom": "^27.0.1",
     "typescript": "^5.3.3",
+    "vitepress": "^1.6.4",
     "vitest": "^4.1.8"
+  },
+  "overrides": {
+    "vitepress": {
+      "vite": "^6.4.6"
+    }
   }
 }

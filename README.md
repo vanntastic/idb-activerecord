@@ -2,6 +2,8 @@
 
 A modern, type-safe ActiveRecord-style API for IndexedDB in JavaScript and TypeScript.
 
+Read the [documentation](https://vanntastic.github.io/idb-activerecord/) for guides, sync setup, and examples. To develop the documentation locally, run `npm install` and `npm run docs:dev`; use `npm run docs:build` to check the production site.
+
 ## Overview
 
 IDB ActiveRecord provides a clean, intuitive interface for working with IndexedDB, abstracting away the complexity of the native IndexedDB API while maintaining its power and performance. Inspired by Ruby's ActiveRecord pattern, this library makes browser-based data persistence simple and elegant.
@@ -821,6 +823,8 @@ class MyAdapter extends BaseAdapter {
 ## Contributing
 
 Contributions are welcome! Feel free to open a PR or issue.
+
+The documentation workflow deploys on pushes to `main`. Set the repository's Pages source to **GitHub Actions** to enable deployment.
 
 ## License
 
