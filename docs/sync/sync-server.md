@@ -19,7 +19,8 @@ const server = new SyncServer({
   // Optional: customize routes
   routes: {
     health: async (req, res) => {
-      // Custom health check
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'ok' }));
     }
   }
 });

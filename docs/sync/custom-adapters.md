@@ -14,7 +14,14 @@ await adapter.connect({
 });
 
 // Provision the remote table (idempotent — SyncEngine calls this for you)
-await adapter.ensureTable('tasks', Task.getColumnDefs() ?? []);
+await adapter.ensureTable('tasks', [
+  { name: 'id', type: 'string', nullable: false, primaryKey: true },
+  { name: 'updatedAt', type: 'datetime', nullable: false, default: '' },
+  { name: 'version', type: 'integer', nullable: false, default: 1 },
+  { name: 'deleted_at', type: 'datetime', nullable: true },
+  { name: 'owner_id', type: 'string', nullable: true, default: 'demo' },
+  ...(Task.getColumnDefs() ?? [])
+]);
 
 // Pull remote changes since a cursor
 const remoteTasks = await adapter.pull<Task>({ table: 'tasks', since: lastSync });

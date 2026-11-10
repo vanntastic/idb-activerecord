@@ -73,7 +73,7 @@ class Post extends ActiveRecord<Post> {
   
   // Define relationships
   static belongsTo = {
-    author: User
+    author: 'users'
   };
 }
 

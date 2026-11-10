@@ -33,8 +33,9 @@ db.registerModel(User);
 await db.connect();
 
 // Later — add Post without touching a version number
+await db.close();
 db.registerModel(Post);
-await db.connect();  // detects missing 'posts' store, upgrades transparently
+await db.connect();  // detects missing 'posts' store and upgrades
 ```
 
 **Sync stores** (`__sync_meta`, `__sync_changes`) are also created automatically the first time `db.sync()` is called or a sync-enabled model is registered — no extra setup required.

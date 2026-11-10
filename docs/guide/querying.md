@@ -81,6 +81,8 @@ const exists = await User.where('email', 'john@example.com').exists();
 ## Scopes
 
 ```typescript
+import { ActiveRecord, QueryBuilder } from 'idb-activerecord';
+
 class User extends ActiveRecord<User> {
   static tableName = 'users';
   
@@ -89,7 +91,8 @@ class User extends ActiveRecord<User> {
   }
   
   static recent() {
-    return this.orderBy('createdAt', 'desc').limit(10);
+    return new QueryBuilder<User>(this.tableName, this.db, this)
+      .orderBy('createdAt', 'desc').limit(10);
   }
 }
 
