@@ -2,7 +2,7 @@
 
 ## Schema management
 
-Schema is handled automatically. Register your models before calling `connect()` and `Database` creates any missing object stores and indexes, bumping the IndexedDB version as needed:
+Register your models before calling `connect()` and `Database` creates any missing object stores and their declared indexes, bumping the IndexedDB version as needed. Indexes are only created when their object store is first created; adding or changing `static indexes` does not update existing stores automatically:
 
 ```typescript
 const db = new Database('my-app');
