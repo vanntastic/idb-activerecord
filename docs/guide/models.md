@@ -81,11 +81,11 @@ class User extends ActiveRecord<User> {
   static tableName = 'users';
   
   static hasMany = {
-    posts: Post
+    posts: 'posts'
   };
   
   static hasOne = {
-    profile: Profile
+    profile: 'profiles'
   };
 }
 

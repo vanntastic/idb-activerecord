@@ -2,7 +2,7 @@
 
 ## Schema management
 
-Register your models before calling `connect()` and `Database` creates any missing object stores and their declared indexes, bumping the IndexedDB version as needed. Indexes are only created when their object store is first created; adding or changing `static indexes` does not update existing stores automatically:
+Register your models before calling `connect()` and `Database` creates any missing object stores and their declared indexes, bumping the IndexedDB version as needed. Declared indexes are created only when their object store is first created; adding or changing `static indexes` does not update an existing store automatically.
 
 ```typescript
 const db = new Database('my-app');
@@ -11,7 +11,7 @@ db.registerModel(Post);
 await db.connect();  // creates 'users' and 'posts' stores if they don't exist
 ```
 
-**Adding indexes** — define `static indexes` on your model and they are created automatically on the first `connect()`:
+**Adding indexes to a new store** — define `static indexes` on your model and they are created automatically when that store is first created:
 
 ```typescript
 class User extends ActiveRecord {

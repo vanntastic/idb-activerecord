@@ -13,14 +13,15 @@ await adapter.connect({
   endpointPattern: '/{table}'
 });
 
-// Provision the remote table (idempotent — SyncEngine calls this for you)
+// Provision the remote table (idempotent — SyncEngine calls this for you).
+// Direct calls must include the sync protocol columns as well as model fields.
 await adapter.ensureTable('tasks', [
   { name: 'id', type: 'string', nullable: false, primaryKey: true },
   { name: 'updatedAt', type: 'datetime', nullable: false, default: '' },
   { name: 'version', type: 'integer', nullable: false, default: 1 },
   { name: 'deleted_at', type: 'datetime', nullable: true },
   { name: 'owner_id', type: 'string', nullable: true, default: 'demo' },
-  ...(Task.getColumnDefs() ?? [])
+  { name: 'title', type: 'string', nullable: false }
 ]);
 
 // Pull remote changes since a cursor

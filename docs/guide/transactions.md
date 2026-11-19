@@ -1,6 +1,6 @@
 # Transactions
 
-`create()` opens its own transaction. Wrapping multiple CRUD calls in `User.transaction()` does not make them atomic: if creating the post fails, the user remains persisted. For atomic writes across stores, use native IndexedDB requests within a single multi-store transaction.
+`create()` opens its own transaction. Calling `User.transaction()` does not make the following model CRUD calls share that transaction, so if creating the post fails, the user remains persisted. For atomic writes across stores, use native IndexedDB requests within a single multi-store transaction.
 
 ```typescript
 // Independent writes, not an atomic transaction

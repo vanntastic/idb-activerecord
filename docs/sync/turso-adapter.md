@@ -6,28 +6,13 @@
 
 ```typescript
 import { createClient } from '@libsql/client';
-import { Database, ActiveRecord } from 'idb-activerecord';
 import { TursoAdapter } from 'idb-activerecord/turso-adapter';
 
-class Task extends ActiveRecord {
-  static tableName = 'tasks';
-  static enableSync = true;
-  static columns = {
-    title:  { type: 'string', nullable: false },
-    status: { type: 'string', default: 'pending' }
-  };
-}
-
-const db = new Database('my-app');
-db.registerModel(Task);
-await db.connect();
-
-// Direct client mode (server-side)
 const client = createClient({ url: 'libsql://my-db.turso.io', authToken: '...' });
 const adapter = new TursoAdapter();
 await adapter.connect({ client });
 
-db.enableAutoSync(adapter, { debounceMs: 500, pollIntervalMs: 5000 });
+// Use this adapter with SyncServer or another server-side sync integration.
 ```
 
 **HTTP mode (browser-side):** Use `url`/`endpointPattern` to talk to a `SyncServer` instance:

@@ -91,6 +91,7 @@ class User extends ActiveRecord<User> {
   }
   
   static recent() {
+    if (!this.db) throw new Error('Database not connected');
     return new QueryBuilder<User>(this.tableName, this.db, this)
       .orderBy('createdAt', 'desc').limit(10);
   }

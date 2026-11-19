@@ -2,7 +2,7 @@
 
 `SyncServer` is a ready-to-use HTTP server for sync adapters. It provides REST endpoints for schema operations, pull/push, and soft deletes. Adapter-agnostic — works with any sync adapter.
 
-**Note:** `SyncServer` is Node.js-only and must be imported directly:
+**Note:** `SyncServer` is Node.js-only and must be imported directly. The default health endpoint is already provided; if you override it, your handler must end the response:
 
 ```typescript
 import { createClient } from '@libsql/client';
