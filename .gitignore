@@ -11,3 +11,5 @@ coverage/
 !.env.example
 test-results
 playwright-report
+docs/.vitepress/cache/
+docs/.vitepress/dist/
