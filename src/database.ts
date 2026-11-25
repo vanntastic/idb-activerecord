@@ -122,6 +122,13 @@ export class Database {
     return this.models.has(tableName);
   }
 
+  /**
+   * Return a map of all registered models keyed by table name.
+   */
+  getModels(): Map<string, typeof ActiveRecord> {
+    return new Map(this.models);
+  }
+
   isConnected(): boolean {
     return this.db !== null || (this.storage !== null && this.storageConnected);
   }

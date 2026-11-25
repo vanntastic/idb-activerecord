@@ -49,6 +49,20 @@ All exports are available under the global `IDBActiveRecord` object:
 </script>
 ```
 
+**CommonJS & ESM Dual Support**
+
+`idb-activerecord` supports both modern ESM `import` and CommonJS `require()` syntax across all subpaths:
+
+```javascript
+// ESM
+import { ActiveRecord, Database } from 'idb-activerecord';
+import { generateERD } from 'idb-activerecord/erd';
+
+// CommonJS
+const { ActiveRecord, Database } = require('idb-activerecord');
+const { generateERD } = require('idb-activerecord/erd');
+```
+
 ## Migration from v1.x to v2.x
 
 **Breaking Change:** IDs have changed from `number` (auto-incrementing) to `string` (UUID format).
@@ -76,6 +90,7 @@ All exports are available under the global `IDBActiveRecord` object:
 | `idb-activerecord` (`.`) | Core ActiveRecord ORM, `Database.default`, `QueryBuilder`, `Migration`, and sync interfaces |
 | `idb-activerecord/server` | Web-standard `createSyncHandler` for Astro, Next.js App Router, Hono, Express, Cloudflare Workers |
 | `idb-activerecord/agent` | `AgentContext`, `whyIsntThisWorking` runtime diagnosis, and code generators |
+| `idb-activerecord/erd` | Bidirectional ERD diagram generation (`generateERD`, `exportToMermaid`, `exportToPlantUML`) and model scaffolding (`parseMermaid`, `generateModels`) |
 | `idb-activerecord/react` | SSR-safe `useLiveQuery` hook for React |
 | `idb-activerecord/turso-adapter` | `TursoAdapter` (sync) and `TursoStorageAdapter` (direct SSR / server mode) |
 | `idb-activerecord/sqlite-adapter` | `SQLiteAdapter` for Node.js `node:sqlite` DatabaseSync |
@@ -122,6 +137,38 @@ const db = new Database('app', {
 db.registerModel(Task);
 await db.connect();
 await db.backfillSync();
+```
+
+## CLI & Bidirectional ERD Tooling
+
+`idb-activerecord` includes a zero-dependency CLI (`npx idb-activerecord`) and an opt-in subpath (`idb-activerecord/erd`) with 0 KB core bundle overhead.
+
+### CLI Commands
+
+```bash
+# Export production SQLite/Turso DDL with sync metadata columns:
+npx idb-activerecord export-schema --input ./src/db.js --sync-columns --output schema.sql
+
+# Scaffold TypeScript ActiveRecord model classes from a Mermaid ERD:
+npx idb-activerecord erd generate-models --input schema.mmd --output ./src/models --sync
+
+# Generate Mermaid or PlantUML ERD diagram from existing models or database:
+npx idb-activerecord erd generate --input ./src/db.js --format mermaid
+```
+
+### Programmatic ERD API
+
+```typescript
+import { generateERD, exportToMermaid, parseMermaid, generateModels } from 'idb-activerecord/erd';
+import { db } from './db.js';
+
+// Introspect models to Mermaid ERD:
+const erd = generateERD(db);
+const mermaid = exportToMermaid(erd);
+
+// Parse Mermaid ERD to generated TypeScript model code:
+const parsed = parseMermaid(mermaid);
+const modelFiles = generateModels(parsed, { language: 'typescript', includeSync: true });
 ```
 
 ## Quick Start (Traditional 4-Step Setup)

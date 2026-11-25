@@ -16,13 +16,18 @@ describe('Bundled Agent Helpers (idb-activerecord/agent)', () => {
       expect(AgentContext.name).toBe('idb-activerecord');
       expect(AgentContext.capabilities).toContain('zero-config-database-default');
       expect(AgentContext.capabilities).toContain('direct-ssr-mode-via-turso-storage');
+      expect(AgentContext.capabilities).toContain('cli-ddl-exporter');
+      expect(AgentContext.capabilities).toContain('bidirectional-erd-tooling');
       expect(AgentContext.subpathExports['.']).toBeDefined();
       expect(AgentContext.subpathExports['./agent']).toBeDefined();
       expect(AgentContext.subpathExports['./react']).toBeDefined();
+      expect(AgentContext.subpathExports['./erd']).toBeDefined();
       expect(AgentContext.quickStart).toContain('ActiveRecord');
       expect(AgentContext.commonTasks.zeroConfigPoc).toBeDefined();
       expect(AgentContext.commonTasks.tursoStorageSsr).toBeDefined();
       expect(AgentContext.commonTasks.modelTemplate).toBeDefined();
+      expect(AgentContext.commonTasks.exportSchema).toBeDefined();
+      expect(AgentContext.commonTasks.erdTooling).toBeDefined();
     });
   });
 

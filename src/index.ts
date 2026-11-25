@@ -60,3 +60,7 @@ export type {
 } from './adapters/turso-adapter.js';
 export { SQLiteAdapter } from './adapters/sqlite-adapter.js';
 export type { SQLiteAdapterConfig, SQLiteClient } from './adapters/sqlite-adapter.js';
+
+// Schema DDL Exporter
+export { exportSchemaToSQL, generateSqliteDDL, exportSchemaToJSON } from './schema-export.js';
+export type { SchemaExportOptions } from './schema-export.js';

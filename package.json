@@ -9,34 +9,49 @@
   "module": "dist/index.js",
   "browser": "dist/idb-activerecord.min.js",
   "types": "dist/index.d.ts",
+  "bin": {
+    "idb-activerecord": "./dist/cli.js"
+  },
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "require": "./dist/cjs/index.cjs"
     },
     "./server": {
+      "types": "./dist/server.d.ts",
       "import": "./dist/server.js",
-      "types": "./dist/server.d.ts"
+      "require": "./dist/cjs/server.cjs"
     },
     "./sync-server": {
+      "types": "./dist/sync-server.d.ts",
       "import": "./dist/sync-server.js",
-      "types": "./dist/sync-server.d.ts"
+      "require": "./dist/cjs/sync-server.cjs"
     },
     "./turso-adapter": {
+      "types": "./dist/adapters/turso-adapter.d.ts",
       "import": "./dist/adapters/turso-adapter.js",
-      "types": "./dist/adapters/turso-adapter.d.ts"
+      "require": "./dist/cjs/adapters/turso-adapter.cjs"
     },
     "./sqlite-adapter": {
+      "types": "./dist/adapters/sqlite-adapter.d.ts",
       "import": "./dist/adapters/sqlite-adapter.js",
-      "types": "./dist/adapters/sqlite-adapter.d.ts"
+      "require": "./dist/cjs/adapters/sqlite-adapter.cjs"
     },
     "./agent": {
+      "types": "./dist/agent.d.ts",
       "import": "./dist/agent.js",
-      "types": "./dist/agent.d.ts"
+      "require": "./dist/cjs/agent.cjs"
     },
     "./react": {
+      "types": "./dist/react.d.ts",
       "import": "./dist/react.js",
-      "types": "./dist/react.d.ts"
+      "require": "./dist/cjs/react.cjs"
+    },
+    "./erd": {
+      "types": "./dist/erd.d.ts",
+      "import": "./dist/erd.js",
+      "require": "./dist/cjs/erd.cjs"
     }
   },
   "files": [
@@ -44,9 +59,10 @@
     "llms.txt"
   ],
   "scripts": {
-    "build": "tsc && node scripts/build-cdn.js",
+    "build": "tsc && node scripts/build-cdn.js && node scripts/build-cjs.js",
     "build:types": "tsc",
     "build:cdn": "node scripts/build-cdn.js",
+    "build:cjs": "node scripts/build-cjs.js",
     "dev": "tsc --watch",
     "test": "vitest",
     "test:coverage": "vitest --coverage",

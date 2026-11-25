@@ -295,3 +295,15 @@ console.log(explainModel(Task));
 ## 6. Machine-Readable Agent Instructions (`llms.txt`)
 
 `idb-activerecord` provides a root `llms.txt` following the [llmstxt.org](https://llmstxt.org) standard. Point your AI coding assistants (Cursor, Claude, Copilot, ChatGPT) directly to `llms.txt` in the root of the repository or npm package for concise, token-efficient instructions.
+
+---
+
+## 7. CLI & Bidirectional ERD Tooling (`idb-activerecord/erd`)
+
+For visual schema design, documentation generation, and production SQLite/Turso migrations, `idb-activerecord` provides zero-config CLI tools and bidirectional ERD generation:
+
+- **CLI DDL Exporter**: `npx idb-activerecord export-schema --input schema.mmd --format sqlite`
+- **Model Scaffolding**: `npx idb-activerecord erd generate-models --input schema.mmd --output ./src/models --sync`
+- **Programmatic ERD**: `import { generateERD, exportToMermaid, parseMermaid, generateModels } from 'idb-activerecord/erd'`
+
+See the dedicated [CLI & ERD Tooling Guide](/guide/cli-and-erd) for full details.

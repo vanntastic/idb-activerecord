@@ -22,6 +22,11 @@ export interface AgentContextType {
     backfillSync: string;
     tursoStorageSsr: string;
     modelTemplate: string;
+    exportSchema: string;
+    erdTooling: string;
+    erd?: string;
+    'export-schema'?: string;
+    'idb-activerecord/erd'?: string;
   };
 }
 
@@ -40,7 +45,9 @@ export const AgentContext: AgentContextType = {
     'offline-first-change-tracking',
     'schema-auto-provisioning',
     'direct-ssr-mode-via-turso-storage',
-    'agent-runtime-diagnostics'
+    'agent-runtime-diagnostics',
+    'cli-ddl-exporter',
+    'bidirectional-erd-tooling'
   ],
   subpathExports: {
     '.': 'Core ActiveRecord, Database, QueryBuilder, Migration, and IDB/Turso sync adapters',
@@ -49,7 +56,8 @@ export const AgentContext: AgentContextType = {
     './react': 'useLiveQuery hook for reactive UI rendering with SSR safety',
     './turso-adapter': 'TursoAdapter for cloud sync and TursoStorageAdapter for direct SSR querying',
     './sqlite-adapter': 'SQLiteAdapter for Node.js node:sqlite DatabaseSync',
-    './sync-server': 'Standalone HTTP sync server for development and testing'
+    './sync-server': 'Standalone HTTP sync server for development and testing',
+    './erd': 'Bidirectional ERD generation (generateERD, exportToMermaid, exportToPlantUML) and model scaffolding (parseMermaid, generateModels)'
   },
   quickStart: `import { ActiveRecord } from 'idb-activerecord';
 
@@ -222,7 +230,41 @@ export class Task extends ActiveRecord<Task> {
   static validates = {
     title: { presence: true, length: { minimum: 1, maximum: 200 } }
   };
-}`
+}`,
+
+    exportSchema: `// CLI SQLite DDL export:
+// npx idb-activerecord export-schema --input ./src/db.js --sync-columns --output schema.sql
+//
+// Programmatic SQLite DDL export:
+import { exportSchemaToSQL } from 'idb-activerecord';
+import { db } from './db.js';
+
+const sql = exportSchemaToSQL(db, { syncColumns: true });
+console.log(sql);`,
+
+    erdTooling: `// CLI ERD Scaffolding:
+// npx idb-activerecord erd generate-models --input schema.mmd --output ./src/models --sync
+//
+// Programmatic Bidirectional ERD:
+import { generateERD, exportToMermaid, parseMermaid, generateModels } from 'idb-activerecord/erd';
+import { db } from './db.js';
+
+// Model -> Mermaid ERD
+const erd = generateERD(db);
+const mermaid = exportToMermaid(erd);
+
+// Mermaid ERD -> Model Code Map
+const parsedErd = parseMermaid(mermaid);
+const modelFiles = generateModels(parsedErd, { language: 'typescript', includeSync: true });`,
+
+    erd: `import { generateERD, exportToMermaid } from 'idb-activerecord/erd';
+import { db } from './db.js';
+
+const erd = generateERD(db);
+const mermaidDiagram = exportToMermaid(erd);`,
+
+    'export-schema': `npx idb-activerecord export-schema --input ./src/db.js --sync-columns --output schema.sql`,
+    'idb-activerecord/erd': `import { generateERD, exportToMermaid, parseMermaid, generateModels } from 'idb-activerecord/erd';`
   }
 };
 

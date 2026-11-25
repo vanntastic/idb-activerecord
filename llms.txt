@@ -9,6 +9,7 @@ idb-activerecord provides an intuitive ActiveRecord ORM interface for client-sid
 - `idb-activerecord` (`.`): Core ActiveRecord model, Database connection, QueryBuilder, Migration, and sync interfaces.
 - `idb-activerecord/server` (`./server`): Web-standard `createSyncHandler` for Astro, Next.js App Router, Hono, and Node servers.
 - `idb-activerecord/agent` (`./agent`): AgentContext, whyIsntThisWorking diagnostics, and code generators.
+- `idb-activerecord/erd` (`./erd`): Bidirectional ERD diagram generation (Mermaid, PlantUML, SQLite DDL) and model scaffolding.
 - `idb-activerecord/react` (`./react`): SSR-safe `useLiveQuery` hook for React.
 - `idb-activerecord/turso-adapter` (`./turso-adapter`): `TursoAdapter` (sync) and `TursoStorageAdapter` (SSR/server mode).
 - `idb-activerecord/sqlite-adapter` (`./sqlite-adapter`): `SQLiteAdapter` for Node.js `node:sqlite`.
@@ -179,4 +180,28 @@ try {
 
 // Tree view of database state:
 console.log(db.explain());
+```
+
+## CLI & Bidirectional ERD Tooling
+
+```bash
+# Export SQLite DDL for Turso migrations:
+npx idb-activerecord export-schema --input schema.mmd --format sqlite --sync-columns
+
+# Scaffold TypeScript models from a Mermaid ERD:
+npx idb-activerecord erd generate-models --input schema.mmd --output ./src/models --sync
+
+# Export Mermaid ERD from existing Database or models:
+npx idb-activerecord erd generate --input ./src/db.js --format mermaid
+```
+
+Programmatic ERD API:
+```ts
+import { generateERD, exportToMermaid, parseMermaid, generateModels } from 'idb-activerecord/erd';
+
+const erd = generateERD(db);
+const mermaid = exportToMermaid(erd);
+
+const parsed = parseMermaid(mermaid);
+const models = generateModels(parsed, { language: 'typescript', includeSync: true });
 ```
