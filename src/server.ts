@@ -123,11 +123,31 @@ function jsonResponse(
   return new Response(JSON.stringify(data), { status, headers });
 }
 
+function trimTrailingSlashes(str: string): string {
+  let end = str.length;
+  while (end > 0 && str.charCodeAt(end - 1) === 47 /* '/' */) {
+    end--;
+  }
+  return str.slice(0, end);
+}
+
+function sanitizeErrorMessage(err: unknown): string {
+  const raw = err instanceof Error ? err.message : 'Internal Server Error';
+  const newlineIdx = raw.indexOf('\n');
+  const carriageIdx = raw.indexOf('\r');
+  let cutoff = raw.length;
+  if (newlineIdx !== -1) cutoff = Math.min(cutoff, newlineIdx);
+  if (carriageIdx !== -1) cutoff = Math.min(cutoff, carriageIdx);
+  return raw.slice(0, cutoff).trim() || 'Internal Server Error';
+}
+
 export function createSyncHandler(options: SyncHandlerOptions): SyncHandlerResult {
   const adapter = options.adapter;
   if (!adapter) {
     throw new Error('createSyncHandler requires an adapter instance');
   }
+
+  const normalizedBasePath = options.basePath ? trimTrailingSlashes(options.basePath.trim()) : '';
 
   const handler = async (req: Request): Promise<Response> => {
     const corsHeaders = getCorsHeaders(req, options.cors);
@@ -141,12 +161,11 @@ export function createSyncHandler(options: SyncHandlerOptions): SyncHandlerResul
       const url = new URL(req.url);
       let pathname = url.pathname;
 
-      if (options.basePath) {
-        const base = options.basePath.replace(/\/+$/, '');
-        if (pathname === base) {
+      if (normalizedBasePath) {
+        if (pathname === normalizedBasePath) {
           pathname = '/';
-        } else if (pathname.startsWith(base + '/')) {
-          pathname = pathname.slice(base.length);
+        } else if (pathname.startsWith(normalizedBasePath + '/')) {
+          pathname = pathname.slice(normalizedBasePath.length);
         }
       }
 
@@ -366,8 +385,7 @@ export function createSyncHandler(options: SyncHandlerOptions): SyncHandlerResul
       return jsonResponse({ error: 'Not Found', path: pathname, method: req.method }, 404, corsHeaders);
     } catch (err) {
       // Do not leak internal stack traces to clients
-      const message = err instanceof Error ? err.message : 'Internal Server Error';
-      return jsonResponse({ error: message.replace(/[\n\r].*/s, '') }, 500, corsHeaders);
+      return jsonResponse({ error: sanitizeErrorMessage(err) }, 500, corsHeaders);
     }
   };
 
