@@ -29,10 +29,19 @@
     "./sqlite-adapter": {
       "import": "./dist/adapters/sqlite-adapter.js",
       "types": "./dist/adapters/sqlite-adapter.d.ts"
+    },
+    "./agent": {
+      "import": "./dist/agent.js",
+      "types": "./dist/agent.d.ts"
+    },
+    "./react": {
+      "import": "./dist/react.js",
+      "types": "./dist/react.d.ts"
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "llms.txt"
   ],
   "scripts": {
     "build": "tsc && node scripts/build-cdn.js",
@@ -66,19 +75,25 @@
     "url": "git+https://github.com/vanntastic/idb-activerecord.git"
   },
   "peerDependencies": {
-    "@libsql/client": "^0.17.3"
+    "@libsql/client": "^0.17.3",
+    "react": "^18.0.0 || ^19.0.0"
   },
   "peerDependenciesMeta": {
     "@libsql/client": {
+      "optional": true
+    },
+    "react": {
       "optional": true
     }
   },
   "devDependencies": {
     "@libsql/client": "^0.17.3",
     "@playwright/test": "^1.60.0",
+    "@types/react": "^18.3.32",
     "@vitest/coverage-v8": "^4.1.8",
     "esbuild": "^0.28.0",
     "jsdom": "^27.0.1",
+    "react": "^18.3.1",
     "typescript": "^5.3.3",
     "vitepress": "^1.6.4",
     "vitest": "^4.1.8"

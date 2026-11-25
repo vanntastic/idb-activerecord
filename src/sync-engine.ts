@@ -7,8 +7,10 @@ import {
   SyncQuery,
   SyncResult,
   ConflictStrategy,
-  ColumnDef
+  ColumnDef,
+  IndexDef
 } from './sync-adapter.js';
+import { ActiveRecord } from './activerecord.js';
 
 const SYNC_META_FIELDS = new Set([
   'id', 'updatedAt', 'version', 'deleted_at', 'owner_id', '_version', '_deletedAt'
@@ -51,6 +53,8 @@ export interface SyncOptions {
    * If omitted, columns are inferred from pending records.
    */
   columns?: ColumnDef[];
+  /** Optional index definitions forwarded to adapter.ensureTable(). */
+  indexes?: IndexDef[];
 }
 
 export class SyncEngine {
@@ -232,7 +236,7 @@ export class SyncEngine {
       const pendingForSchema = await this.getPendingChanges(table);
       userColumns = this.deriveColumns(pendingForSchema.map(c => c.data));
     }
-    await adapter.ensureTable(table, [...SYNC_META_COLUMNS, ...userColumns]);
+    await adapter.ensureTable(table, [...SYNC_META_COLUMNS, ...userColumns], options.indexes);
 
     // 2. Push local pending changes
     onProgress('Pushing local changes...');
@@ -444,6 +448,9 @@ export class SyncEngine {
           error: err instanceof Error ? err.message : String(err)
         });
       }
+    }
+    if (remoteRecords.length > 0) {
+      ActiveRecord.notifySubscribers({ table, action: 'sync' });
     }
 
     return result;

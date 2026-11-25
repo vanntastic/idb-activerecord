@@ -233,7 +233,20 @@ export function createSyncHandler(options: SyncHandlerOptions): SyncHandlerResul
           }
         }
 
-        await adapter.ensureTable(table, columns);
+        const indexes = Array.isArray(body.indexes) ? body.indexes : [];
+        for (const idx of indexes) {
+          if (idx.name && !isValidIdentifier(idx.name)) {
+            return jsonResponse({ error: `Invalid index name: ${idx.name}` }, 400, corsHeaders);
+          }
+          const idxCols = Array.isArray(idx.columns) ? idx.columns : [];
+          for (const c of idxCols) {
+            if (!isValidIdentifier(c)) {
+              return jsonResponse({ error: `Invalid index column: ${c}` }, 400, corsHeaders);
+            }
+          }
+        }
+
+        await adapter.ensureTable(table, columns, indexes);
         return jsonResponse({ table, ensured: true }, 200, corsHeaders);
       }
 

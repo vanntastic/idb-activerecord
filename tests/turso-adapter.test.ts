@@ -126,6 +126,17 @@ class MockSqliteClient implements TursoClient {
       return [];
     }
 
+    // CREATE (UNIQUE )?INDEX IF NOT EXISTS ...
+    const indexMatch = /^CREATE (?:UNIQUE )?INDEX IF NOT EXISTS "([^"]+)" ON "([^"]+)" \(([\s\S]+)\)$/i.exec(trimmed);
+    if (indexMatch) {
+      return [];
+    }
+
+    // Transaction commands
+    if (trimmed === 'BEGIN' || trimmed === 'COMMIT' || trimmed === 'ROLLBACK') {
+      return [];
+    }
+
     throw new Error(`Mock SQLite: unsupported SQL: ${sql}`);
   }
 

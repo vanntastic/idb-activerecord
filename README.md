@@ -69,9 +69,62 @@ All exports are available under the global `IDBActiveRecord` object:
 - Offline-first support (generate IDs without server)
 - Distributed systems friendly
 
-## Quick Start
+## Subpath Exports
 
-### With npm (TypeScript / ESM)
+| Export Path | Purpose |
+|-------------|---------|
+| `idb-activerecord` (`.`) | Core ActiveRecord ORM, `Database.default`, `QueryBuilder`, `Migration`, and sync interfaces |
+| `idb-activerecord/server` | Web-standard `createSyncHandler` for Astro, Next.js App Router, Hono, Express, Cloudflare Workers |
+| `idb-activerecord/agent` | `AgentContext`, `whyIsntThisWorking` runtime diagnosis, and code generators |
+| `idb-activerecord/react` | SSR-safe `useLiveQuery` hook for React |
+| `idb-activerecord/turso-adapter` | `TursoAdapter` (sync) and `TursoStorageAdapter` (direct SSR / server mode) |
+| `idb-activerecord/sqlite-adapter` | `SQLiteAdapter` for Node.js `node:sqlite` DatabaseSync |
+| `idb-activerecord/sync-server` | Standalone development and testing sync server |
+
+For AI agents and automated coding tools, refer to the machine-readable [`llms.txt`](./llms.txt) and the [Agentic Developer Experience Guide](https://vanntastic.github.io/idb-activerecord/guide/agentic-dx.html).
+
+## Day-0: Zero-Config Quick Start
+
+Define an ActiveRecord model and query it immediately without manual database boilerplate:
+
+```typescript
+import { ActiveRecord } from 'idb-activerecord';
+
+class Task extends ActiveRecord {
+  static tableName = 'tasks';
+}
+
+// 0-step setup: automatically connects Database.default on first query
+const task = await Task.create({ title: 'Zero-config Day 0 POC' });
+const pending = await Task.where('title', 'like', '%POC%').all();
+```
+
+## Day-N: Production Turso Cloud Sync
+
+Scale your application to a multi-tenant cloud setup with Turso (libSQL):
+
+```typescript
+import { Database } from 'idb-activerecord';
+import { Task } from './models/task';
+
+const db = new Database('app', {
+  sync: {
+    url: '/api/sync',
+    auto: true,
+    interval: 30000,
+    offlineQueue: true,
+    getAuthHeaders: async () => ({
+      Authorization: `Bearer ${localStorage.getItem('token')}`
+    })
+  }
+});
+
+db.registerModel(Task);
+await db.connect();
+await db.backfillSync();
+```
+
+## Quick Start (Traditional 4-Step Setup)
 
 ```typescript
 import { ActiveRecord, Database } from 'idb-activerecord';

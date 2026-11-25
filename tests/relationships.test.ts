@@ -422,6 +422,8 @@ describe('ActiveRecord Relationships', () => {
       expect(singularize('tasks')).toBe('task');
       expect(singularize('categories')).toBe('category');
       expect(singularize('statuses')).toBe('status');
+      expect(singularize('houses')).toBe('house');
+      expect(singularize('uses')).toBe('use');
       expect(singularize('boxes')).toBe('box');
       expect(singularize('classes')).toBe('class');
       expect(singularize('status')).toBe('status');
