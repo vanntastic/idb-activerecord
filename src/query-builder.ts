@@ -90,6 +90,9 @@ export class QueryBuilder<T> {
           results = results.map((item: any) => {
             const instance = Object.create(this.modelClass.prototype);
             Object.assign(instance, item);
+            if (typeof this.modelClass._defineRelationshipAccessors === 'function') {
+              this.modelClass._defineRelationshipAccessors(instance);
+            }
             return instance;
           });
         }

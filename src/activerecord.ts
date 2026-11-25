@@ -3,6 +3,29 @@
 import { QueryBuilder } from './query-builder.js';
 import { ValidationRule } from './types.js';
 
+export function singularize(word: string): string {
+  if (!word || typeof word !== 'string') return word;
+  if (word.endsWith('ies') && word.length > 3) {
+    return word.slice(0, -3) + 'y';
+  }
+  if (word.endsWith('sses') || word.endsWith('xes') || word.endsWith('ches') || word.endsWith('shes')) {
+    return word.slice(0, -2);
+  }
+  if (word.endsWith('uses')) {
+    return word.slice(0, -2);
+  }
+  if (word.endsWith('zzes')) {
+    return word.slice(0, -3);
+  }
+  if (word.endsWith('us') || word.endsWith('is') || word.endsWith('ss')) {
+    return word;
+  }
+  if (word.endsWith('s')) {
+    return word.slice(0, -1);
+  }
+  return word;
+}
+
 export class ActiveRecord<_T = any> {
   id?: string;
   _version?: number;
@@ -438,7 +461,7 @@ export class ActiveRecord<_T = any> {
     return this.errors.length === 0;
   }
 
-  private static _defineRelationshipAccessors(instance: any): void {
+  static _defineRelationshipAccessors(instance: any): void {
     const constructor = instance.constructor as typeof ActiveRecord;
     for (const key of Object.keys(constructor.hasOne ?? {})) {
       if (!(key in instance)) {
@@ -504,16 +527,31 @@ export class ActiveRecord<_T = any> {
     const constructor = this.constructor as typeof ActiveRecord;
     const relatedModel = ActiveRecord._resolveRelationship(constructor, relationshipName, 'hasOne');
 
-    const foreignKey = `${constructor.tableName}Id`;
-    return await relatedModel.where(foreignKey, this.id).first();
+    const singularFk = `${singularize(constructor.tableName)}Id`;
+    const pluralFk = `${constructor.tableName}Id`;
+
+    let record = await relatedModel.where(singularFk, this.id).first();
+    if (!record && singularFk !== pluralFk) {
+      record = await relatedModel.where(pluralFk, this.id).first();
+    }
+    return record;
   }
 
   async hasMany(relationshipName: string): Promise<any[]> {
     const constructor = this.constructor as typeof ActiveRecord;
     const relatedModel = ActiveRecord._resolveRelationship(constructor, relationshipName, 'hasMany');
 
-    const foreignKey = `${constructor.tableName}Id`;
-    return await relatedModel.where(foreignKey, this.id).all();
+    const singularFk = `${singularize(constructor.tableName)}Id`;
+    const pluralFk = `${constructor.tableName}Id`;
+
+    let records = await relatedModel.where(singularFk, this.id).all();
+    if ((!records || records.length === 0) && singularFk !== pluralFk) {
+      const fallbackRecords = await relatedModel.where(pluralFk, this.id).all();
+      if (fallbackRecords && fallbackRecords.length > 0) {
+        records = fallbackRecords;
+      }
+    }
+    return records ?? [];
   }
 
   async belongsTo(relationshipName: string): Promise<any> {

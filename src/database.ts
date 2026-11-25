@@ -40,8 +40,11 @@ export class Database {
   }
 
   private resolveVersion(): Promise<number> {
+    if (typeof globalThis.indexedDB === 'undefined') {
+      return Promise.reject(new Error('IndexedDB is not available in this environment. Database operations require a browser environment or an IndexedDB polyfill.'));
+    }
     return new Promise((resolve, reject) => {
-      const probe = indexedDB.open(this.name);
+      const probe = globalThis.indexedDB.open(this.name);
       probe.onerror = () => reject(probe.error);
       probe.onsuccess = () => {
         const current = probe.result.version;
@@ -69,9 +72,12 @@ export class Database {
   }
 
   async connect(): Promise<void> {
+    if (typeof globalThis.indexedDB === 'undefined') {
+      throw new Error('IndexedDB is not available in this environment. Database operations require a browser environment or an IndexedDB polyfill.');
+    }
     const version = this.version ?? await this.resolveVersion();
     return new Promise((resolve, reject) => {
-      const request = indexedDB.open(this.name, version);
+      const request = globalThis.indexedDB.open(this.name, version);
 
       request.onerror = () => reject(request.error);
       request.onsuccess = () => {
@@ -186,6 +192,49 @@ export class Database {
 
   async sync(table: string, adapter: SyncAdapter, options?: SyncOptions): Promise<SyncResult> {
     return this.getSyncEngine().sync(table, adapter, this.withModelColumns(table, options));
+  }
+
+  /**
+   * Backfills pre-existing local records into __sync_changes so they are staged
+   * for remote synchronization when sync is enabled after records were created.
+   *
+   * @param tableName Optional table name. If omitted, backfills all registered models with enableSync = true.
+   * @returns { tables: string[], queuedCount: number, skippedCount: number }
+   */
+  async backfillSync(tableName?: string): Promise<{
+    tables: string[];
+    queuedCount: number;
+    skippedCount: number;
+  }> {
+    if (!this.db) throw new Error('Database not connected. Call connect() first.');
+
+    let targetTables: string[] = [];
+    if (tableName) {
+      targetTables = [tableName];
+    } else {
+      // Find all registered models with enableSync = true
+      for (const [table, modelClass] of this.models.entries()) {
+        if (modelClass.enableSync) {
+          targetTables.push(table);
+        }
+      }
+    }
+
+    const engine = this.getSyncEngine();
+    let totalQueued = 0;
+    let totalSkipped = 0;
+
+    for (const table of targetTables) {
+      const result = await engine.backfill(table);
+      totalQueued += result.queuedCount;
+      totalSkipped += result.skippedCount;
+    }
+
+    return {
+      tables: targetTables,
+      queuedCount: totalQueued,
+      skippedCount: totalSkipped
+    };
   }
 
   /**

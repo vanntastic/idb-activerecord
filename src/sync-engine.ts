@@ -252,9 +252,15 @@ export class SyncEngine {
     result.errors.push(...mergeResult.errors);
 
     // 5. Update sync metadata
+    const pullTimestamp =
+      (remoteRecords as any).serverTime ||
+      (adapter.state?.lastPullAt ? adapter.state.lastPullAt.toISOString() : null) ||
+      new Date().toISOString();
+
     await this.setSyncMeta(table, {
       lastPushAt: new Date().toISOString(),
-      lastPullAt: new Date().toISOString()
+      lastPullAt: pullTimestamp,
+      lastSyncCursor: (remoteRecords as any).cursor ?? null
     });
 
     onProgress('Sync complete.');
@@ -276,6 +282,7 @@ export class SyncEngine {
         if (typeof val === 'number') type = 'integer';
         else if (typeof val === 'boolean') type = 'boolean';
         else if (val instanceof Date) type = 'datetime';
+        else if (Array.isArray(val) || (typeof val === 'object' && val !== null)) type = 'json';
         colMap.set(key, { name: key, type, nullable: true });
       }
     }
@@ -324,20 +331,87 @@ export class SyncEngine {
 
   async pullChanges(table: string, adapter: SyncAdapter): Promise<any[]> {
     const meta = await this.getSyncMeta(table);
+    const allRecords: any[] = [];
+    const seenIds = new Set<string>();
+    const pageSize = 1000;
+    const maxPages = 1000; // safety max-page guard against infinite loops
+    let page = 0;
+    let cursor: string | undefined = undefined;
+    let latestServerTime: string | null = null;
+    let latestCursor: string | null = meta.lastSyncCursor ?? null;
 
-    const query: SyncQuery = {
-      table,
-      since: meta.lastPullAt ? new Date(meta.lastPullAt) : undefined,
-      limit: 1000,
-      includeDeleted: true // sync must see tombstones to propagate deletions
-    };
+    while (page < maxPages) {
+      page++;
+      const query: SyncQuery = {
+        table,
+        since: meta.lastPullAt ? new Date(meta.lastPullAt) : undefined,
+        cursor,
+        limit: pageSize,
+        includeDeleted: true // sync must see tombstones to propagate deletions
+      };
 
-    // Auto-filter by user if set
-    if (this.syncUser) {
-      query.where = { owner_id: this.syncUser };
+      if (this.syncUser) {
+        query.where = { owner_id: this.syncUser };
+      }
+
+      const response = await adapter.pull(query);
+      const records: any[] = Array.isArray(response) ? response : (response as any).records ?? [];
+      if (records.length === 0) {
+        break;
+      }
+
+      // Check if adapter ignored pagination cursor and returned already-seen records
+      if (cursor !== undefined && records.length > 0) {
+        const firstId = String(records[0]?.id);
+        if (seenIds.has(firstId)) {
+          // Adapter does not support cursor filtering; stop pagination
+          break;
+        }
+      }
+
+      for (const rec of records) {
+        if (rec && rec.id !== undefined) {
+          seenIds.add(String(rec.id));
+        }
+      }
+      allRecords.push(...records);
+
+      const respCursor = (response as any).cursor;
+      const respServerTime = (response as any).serverTime;
+      if (respServerTime) {
+        latestServerTime = respServerTime;
+      }
+      if (respCursor) {
+        latestCursor = respCursor;
+      }
+
+      const hasMoreExplicit = (response as any).hasMore;
+      if (hasMoreExplicit === false) {
+        break;
+      }
+      if (records.length < pageSize && hasMoreExplicit !== true) {
+        break;
+      }
+
+      if (respCursor) {
+        cursor = respCursor;
+      } else if (records.length > 0) {
+        const last = records[records.length - 1];
+        const lastUpdated = last.updatedAt || last.updated_at;
+        if (lastUpdated && last.id) {
+          cursor = `${lastUpdated}__${last.id}`;
+        } else {
+          break;
+        }
+      } else {
+        break;
+      }
     }
 
-    return adapter.pull(query);
+    (allRecords as any).serverTime = latestServerTime;
+    (allRecords as any).cursor = latestCursor;
+
+    return allRecords;
   }
 
   // ------------------------------------------------------------------
@@ -480,5 +554,95 @@ export class SyncEngine {
         });
       }
     }
+  }
+
+  /**
+   * Backfill local pre-existing records into __sync_changes so they are staged for sync.
+   * Updates local records with missing updatedAt and _version (default 1).
+   * Idempotent: skips records that already have pending changes.
+   */
+  async backfill(table: string): Promise<{ queuedCount: number; skippedCount: number }> {
+    if (!this.db) throw new Error('Database not connected');
+    if (!this.db.objectStoreNames.contains(table)) {
+      throw new Error(`Table ${table} does not exist in database`);
+    }
+    if (!this.db.objectStoreNames.contains('__sync_changes')) {
+      throw new Error('Sync stores not initialized');
+    }
+
+    const pending = await this.getPendingChanges(table);
+    const pendingRecordIds = new Set(pending.map(c => String(c.recordId)));
+
+    const records = await new Promise<any[]>((resolve, reject) => {
+      const tx = this.db!.transaction([table], 'readonly');
+      const store = tx.objectStore(table);
+      const req = store.getAll();
+      req.onsuccess = () => resolve(req.result ?? []);
+      req.onerror = () => reject(req.error);
+    });
+
+    let queuedCount = 0;
+    let skippedCount = 0;
+    const now = new Date().toISOString();
+    const recordsToUpdateInStore: any[] = [];
+    const changesToQueue: any[] = [];
+
+    for (const record of records) {
+      const recordId = String(record.id);
+      if (pendingRecordIds.has(recordId)) {
+        skippedCount++;
+        continue;
+      }
+
+      let modified = false;
+      if (!record._version) {
+        record._version = 1;
+        modified = true;
+      }
+      if (!record.updatedAt) {
+        record.updatedAt = now;
+        modified = true;
+      }
+      if (modified) {
+        recordsToUpdateInStore.push(record);
+      }
+
+      changesToQueue.push({
+        table,
+        recordId: record.id,
+        action: record._deletedAt ? 'delete' : 'create',
+        data: record,
+        timestamp: record.updatedAt || now,
+        synced: false
+      });
+      pendingRecordIds.add(recordId);
+      queuedCount++;
+    }
+
+    if (recordsToUpdateInStore.length > 0) {
+      await new Promise<void>((resolve, reject) => {
+        const tx = this.db!.transaction([table], 'readwrite');
+        const store = tx.objectStore(table);
+        for (const rec of recordsToUpdateInStore) {
+          store.put(rec);
+        }
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    }
+
+    if (changesToQueue.length > 0) {
+      await new Promise<void>((resolve, reject) => {
+        const tx = this.db!.transaction(['__sync_changes'], 'readwrite');
+        const store = tx.objectStore('__sync_changes');
+        for (const change of changesToQueue) {
+          store.add(change);
+        }
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    }
+
+    return { queuedCount, skippedCount };
   }
 }

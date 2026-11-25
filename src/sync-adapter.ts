@@ -25,6 +25,7 @@ export interface AdapterConfig {
 export interface SyncQuery {
   table: string;
   since?: Date;
+  cursor?: string;
   where?: Record<string, unknown>;
   limit?: number;
   offset?: number;

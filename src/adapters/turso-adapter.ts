@@ -67,6 +67,12 @@ export interface TursoAdapterConfig extends AdapterConfig {
   endpointPattern?: string;
   /** Default owner_id when a record doesn't carry one (defaults to 'demo'). */
   defaultOwnerId?: string;
+  /** Custom request headers for HTTP mode */
+  headers?: Record<string, string>;
+  /** Async or sync function providing dynamic auth headers (e.g. Bearer token) for HTTP mode */
+  getAuthHeaders?: () => Promise<Record<string, string>> | Record<string, string>;
+  /** Request credentials for fetch in HTTP mode ('include', 'same-origin', 'omit') */
+  credentials?: RequestCredentials;
 }
 
 // SQL columns reserved for sync meta — excluded from user-column discovery.
@@ -150,6 +156,18 @@ export class TursoAdapter extends BaseAdapter {
     this.updateState({ status: SyncStatus.IDLE });
   }
 
+  private async getHttpHeaders(extraHeaders?: Record<string, string>): Promise<Record<string, string>> {
+    const authHeaders = (this.config as TursoAdapterConfig).getAuthHeaders
+      ? await (this.config as TursoAdapterConfig).getAuthHeaders!()
+      : {};
+    return {
+      'Content-Type': 'application/json',
+      ...this.config.headers,
+      ...authHeaders,
+      ...extraHeaders
+    };
+  }
+
   /**
    * Create the table if missing, or ALTER TABLE ADD COLUMN for any newly
    * declared columns. SQLite's ALTER TABLE is limited (no drop/rename),
@@ -163,9 +181,11 @@ export class TursoAdapter extends BaseAdapter {
       // HTTP mode: POST /schema to create/alter table
       const url = this.httpUrl! + '/schema';
       const body = JSON.stringify({ name: table, columns });
+      const headers = await this.getHttpHeaders();
       const res = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
+        credentials: (this.config as TursoAdapterConfig).credentials,
         body
       });
       if (!res.ok) {
@@ -212,7 +232,11 @@ export class TursoAdapter extends BaseAdapter {
         const safeTable = encodeURIComponent(query.table);
         const endpoint = this.httpEndpointPattern!.replace('{table}', safeTable);
         const url = new URL(endpoint, this.httpUrl);
-        if (query.since) url.searchParams.set('since', query.since.toISOString());
+        if (query.cursor) {
+          url.searchParams.set('cursor', query.cursor);
+        } else if (query.since) {
+          url.searchParams.set('since', query.since.toISOString());
+        }
         if (query.where) {
           for (const [k, v] of Object.entries(query.where)) {
             url.searchParams.set(k, String(v));
@@ -222,21 +246,54 @@ export class TursoAdapter extends BaseAdapter {
         if (query.limit) url.searchParams.set('limit', String(query.limit));
         if (query.offset) url.searchParams.set('offset', String(query.offset));
 
-        const res = await fetch(url.toString());
+        const headers = await this.getHttpHeaders();
+        const res = await fetch(url.toString(), {
+          headers,
+          credentials: (this.config as TursoAdapterConfig).credentials
+        });
         if (!res.ok) {
           const err = await res.text();
           throw new Error(`Pull failed: ${err}`);
         }
-        const rows = await res.json();
+        const body = await res.json();
+        const rawRows: any[] = Array.isArray(body) ? body : (body.records ?? []);
+        const serverTime = res.headers?.get?.('x-server-time') || (body && body.serverTime) || undefined;
+        const cursor = res.headers?.get?.('x-cursor') || (body && body.cursor) || undefined;
+        const hasMore = body && typeof body.hasMore === 'boolean' ? body.hasMore : (rawRows.length >= (query.limit ?? 1000));
+
+        const rows = rawRows as T[];
+        Object.defineProperties(rows, {
+          serverTime: { value: serverTime, writable: true, configurable: true, enumerable: false },
+          cursor: { value: cursor, writable: true, configurable: true, enumerable: false },
+          hasMore: { value: hasMore, writable: true, configurable: true, enumerable: false }
+        });
 
         this.updateState({ lastPullAt: new Date(), status: SyncStatus.IDLE });
-        return rows as T[];
+        return rows;
       }
 
       const conditions: string[] = [];
       const params: unknown[] = [];
 
-      if (query.since) {
+      if (query.cursor) {
+        let cursorParsed: { updatedAt: string; id: string } | null = null;
+        try {
+          const raw = typeof atob === 'function' ? atob(query.cursor) : Buffer.from(query.cursor, 'base64').toString('utf-8');
+          if (raw.includes('__')) {
+            const idx = raw.indexOf('__');
+            cursorParsed = { updatedAt: raw.slice(0, idx), id: raw.slice(idx + 2) };
+          }
+        } catch {
+          if (query.cursor.includes('__')) {
+            const idx = query.cursor.indexOf('__');
+            cursorParsed = { updatedAt: query.cursor.slice(0, idx), id: query.cursor.slice(idx + 2) };
+          }
+        }
+        if (cursorParsed) {
+          conditions.push(`(updatedAt > ? OR (updatedAt = ? AND id > ?))`);
+          params.push(cursorParsed.updatedAt, cursorParsed.updatedAt, cursorParsed.id);
+        }
+      } else if (query.since) {
         conditions.push(`updatedAt > ?`);
         params.push(query.since.toISOString());
       }
@@ -252,18 +309,58 @@ export class TursoAdapter extends BaseAdapter {
 
       let sql = `SELECT * FROM ${this.identifier(query.table)}`;
       if (conditions.length > 0) sql += ` WHERE ${conditions.join(' AND ')}`;
-      sql += ` ORDER BY id ASC`;
+      sql += ` ORDER BY updatedAt ASC, id ASC`;
       if (query.limit) sql += ` LIMIT ${Number(query.limit)}`;
       if (query.offset) sql += ` OFFSET ${Number(query.offset)}`;
 
       const rows = await this.queryAll<Record<string, unknown>>(sql, params);
 
-      // Map SQL columns -> SyncEngine wire format (_version, _deletedAt).
-      const mapped = rows.map(row => ({
-        ...row,
-        _version: row.version,
-        _deletedAt: (row.deleted_at ?? null) as string | null
-      })) as unknown as T[];
+      const info = await this.queryAll<{ name: string; type: string }>(
+        `PRAGMA table_info(${this.identifier(query.table)})`
+      );
+      const jsonCols = new Set(info.filter(c => (c.type || '').toUpperCase() === 'JSON').map(c => c.name));
+      const boolCols = new Set(info.filter(c => (c.type || '').toUpperCase() === 'BOOLEAN').map(c => c.name));
+
+      // Map SQL columns -> SyncEngine wire format (_version, _deletedAt) & deserialize JSON/BOOLEAN
+      const mapped = rows.map(row => {
+        const item: Record<string, unknown> = {
+          ...row,
+          _version: row.version,
+          _deletedAt: (row.deleted_at ?? null) as string | null
+        };
+        for (const col of jsonCols) {
+          if (item[col] !== null && typeof item[col] === 'string') {
+            try {
+              item[col] = JSON.parse(item[col] as string);
+            } catch {
+              // preserve plain string if parse fails
+            }
+          }
+        }
+        for (const col of boolCols) {
+          if (item[col] !== null && item[col] !== undefined) {
+            item[col] = Boolean(item[col]);
+          }
+        }
+        return item;
+      }) as unknown as T[];
+
+      const hasMore = query.limit !== undefined && rows.length >= query.limit;
+      let nextCursor: string | undefined = undefined;
+      if (hasMore && rows.length > 0) {
+        const lastRow = rows[rows.length - 1];
+        const raw = `${lastRow.updatedAt || ''}__${lastRow.id || ''}`;
+        nextCursor = typeof btoa === 'function' ? btoa(raw) : Buffer.from(raw).toString('base64');
+      }
+
+      Object.defineProperties(mapped, {
+        serverTime: { value: new Date().toISOString(), writable: true, configurable: true, enumerable: false },
+        cursor: { value: nextCursor, writable: true, configurable: true, enumerable: false },
+        hasMore: { value: hasMore, writable: true, configurable: true, enumerable: false }
+      });
+
+      this.updateState({ lastPullAt: new Date(), status: SyncStatus.IDLE });
+      return mapped;
 
       this.updateState({ lastPullAt: new Date(), status: SyncStatus.IDLE });
       return mapped;
@@ -301,9 +398,11 @@ export class TursoAdapter extends BaseAdapter {
         // HTTP mode: POST /:table with records
         const endpoint = this.httpEndpointPattern!.replace('{table}', table);
         const url = this.httpUrl! + endpoint;
+        const headers = await this.getHttpHeaders();
         const res = await fetch(url, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
+          credentials: (this.config as TursoAdapterConfig).credentials,
           body: JSON.stringify(records)
         });
         if (!res.ok) {
@@ -427,7 +526,11 @@ export class TursoAdapter extends BaseAdapter {
     if (this.useHttp) {
       // HTTP mode: GET /schema/:table
       const url = this.httpUrl! + `/schema/${table}`;
-      const res = await fetch(url);
+      const headers = await this.getHttpHeaders();
+      const res = await fetch(url, {
+        headers,
+        credentials: (this.config as TursoAdapterConfig).credentials
+      });
       if (!res.ok) {
         const err = await res.text();
         throw new Error(`Failed to get schema: ${err}`);
@@ -518,12 +621,17 @@ export class TursoAdapter extends BaseAdapter {
   private toSqliteType(t: string | undefined): string {
     switch ((t ?? 'string').toLowerCase()) {
       case 'integer':
-      case 'boolean':
         return 'INTEGER';
+      case 'boolean':
+        return 'BOOLEAN';
       case 'real':
       case 'float':
       case 'number':
         return 'REAL';
+      case 'json':
+      case 'array':
+      case 'object':
+        return 'JSON';
       case 'datetime':
       case 'string':
       case 'text':
@@ -536,6 +644,8 @@ export class TursoAdapter extends BaseAdapter {
     const u = (t ?? '').toUpperCase();
     if (u === 'INTEGER') return 'integer';
     if (u === 'REAL' || u === 'NUMERIC') return 'real';
+    if (u === 'BOOLEAN') return 'boolean';
+    if (u === 'JSON') return 'json';
     return 'string';
   }
 
@@ -547,9 +657,12 @@ export class TursoAdapter extends BaseAdapter {
   }
 
   private toSqlValue(v: unknown): unknown {
-    if (v === undefined) return null;
+    if (v === undefined || v === null) return null;
     if (typeof v === 'boolean') return v ? 1 : 0;
     if (v instanceof Date) return v.toISOString();
+    if (Array.isArray(v) || (typeof v === 'object' && v !== null)) {
+      return JSON.stringify(v);
+    }
     return v;
   }
 

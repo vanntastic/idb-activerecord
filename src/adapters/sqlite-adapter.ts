@@ -40,6 +40,12 @@ export interface SQLiteAdapterConfig extends AdapterConfig {
   endpointPattern?: string;
   /** Default owner_id when a record doesn't carry one (defaults to 'demo'). */
   defaultOwnerId?: string;
+  /** Custom request headers for HTTP mode */
+  headers?: Record<string, string>;
+  /** Async or sync function providing dynamic auth headers (e.g. Bearer token) for HTTP mode */
+  getAuthHeaders?: () => Promise<Record<string, string>> | Record<string, string>;
+  /** Request credentials for fetch in HTTP mode ('include', 'same-origin', 'omit') */
+  credentials?: RequestCredentials;
 }
 
 // SQL columns reserved for sync meta — excluded from user-column discovery.
@@ -157,30 +163,39 @@ export class SQLiteAdapter extends BaseAdapter {
     return url.toString();
   }
 
-  private async httpGet<T>(url: string): Promise<T> {
+  private async getHttpHeaders(extraHeaders?: Record<string, string>): Promise<Record<string, string>> {
+    const authHeaders = this.config.getAuthHeaders
+      ? await this.config.getAuthHeaders()
+      : {};
+    return {
+      'Content-Type': 'application/json',
+      ...(this.config.authToken ? { 'Authorization': this.config.authToken } : {}),
+      ...(this.config.apiKey ? { 'X-API-Key': this.config.apiKey } : {}),
+      ...this.config.headers,
+      ...authHeaders,
+      ...extraHeaders
+    };
+  }
+
+  private async httpGet<T>(url: string): Promise<{ data: T; headers?: Headers }> {
+    const headers = await this.getHttpHeaders();
     const response = await fetch(url, {
-      headers: {
-        'Content-Type': 'application/json',
-        ...(this.config.authToken ? { 'Authorization': this.config.authToken } : {}),
-        ...(this.config.apiKey ? { 'X-API-Key': this.config.apiKey } : {}),
-        ...this.config.headers
-      }
+      headers,
+      credentials: this.config.credentials
     });
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
-    return response.json() as T;
+    const data = await response.json();
+    return { data: data as T, headers: response.headers };
   }
 
   private async httpPost<T>(url: string, body: unknown): Promise<T> {
+    const headers = await this.getHttpHeaders();
     const response = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(this.config.authToken ? { 'Authorization': this.config.authToken } : {}),
-        ...(this.config.apiKey ? { 'X-API-Key': this.config.apiKey } : {}),
-        ...this.config.headers
-      },
+      headers,
+      credentials: this.config.credentials,
       body: JSON.stringify(body)
     });
     if (!response.ok) {
@@ -235,7 +250,8 @@ export class SQLiteAdapter extends BaseAdapter {
     try {
       if (this.useHttp) {
         const queryParams: Record<string, string> = {};
-        if (query.since) queryParams.since = query.since.toISOString();
+        if (query.cursor) queryParams.cursor = query.cursor;
+        else if (query.since) queryParams.since = query.since.toISOString();
         if (query.where) {
           for (const [k, v] of Object.entries(query.where)) {
             queryParams[k] = String(v);
@@ -245,17 +261,46 @@ export class SQLiteAdapter extends BaseAdapter {
         if (query.limit) queryParams.limit = String(query.limit);
         if (query.offset) queryParams.offset = String(query.offset);
 
-        const rows = await this.httpGet<Record<string, unknown>[]>(
+        const { data: body, headers } = await this.httpGet<any>(
           this.buildUrl(query.table, queryParams)
         );
+        const rawRows: any[] = Array.isArray(body) ? body : (body && body.records ? body.records : []);
+        const serverTime = headers?.get?.('x-server-time') || (body && body.serverTime) || undefined;
+        const cursor = headers?.get?.('x-cursor') || (body && body.cursor) || undefined;
+        const hasMore = body && typeof body.hasMore === 'boolean' ? body.hasMore : (rawRows.length >= (query.limit ?? 1000));
+
+        const rows = rawRows as T[];
+        Object.defineProperties(rows, {
+          serverTime: { value: serverTime, writable: true, configurable: true, enumerable: false },
+          cursor: { value: cursor, writable: true, configurable: true, enumerable: false },
+          hasMore: { value: hasMore, writable: true, configurable: true, enumerable: false }
+        });
         this.updateState({ lastPullAt: new Date(), status: SyncStatus.IDLE });
-        return rows as T[];
+        return rows;
       }
 
       const conditions: string[] = [];
       const params: unknown[] = [];
 
-      if (query.since) {
+      if (query.cursor) {
+        let cursorParsed: { updatedAt: string; id: string } | null = null;
+        try {
+          const raw = typeof atob === 'function' ? atob(query.cursor) : Buffer.from(query.cursor, 'base64').toString('utf-8');
+          if (raw.includes('__')) {
+            const idx = raw.indexOf('__');
+            cursorParsed = { updatedAt: raw.slice(0, idx), id: raw.slice(idx + 2) };
+          }
+        } catch {
+          if (query.cursor.includes('__')) {
+            const idx = query.cursor.indexOf('__');
+            cursorParsed = { updatedAt: query.cursor.slice(0, idx), id: query.cursor.slice(idx + 2) };
+          }
+        }
+        if (cursorParsed) {
+          conditions.push(`(updatedAt > ? OR (updatedAt = ? AND id > ?))`);
+          params.push(cursorParsed.updatedAt, cursorParsed.updatedAt, cursorParsed.id);
+        }
+      } else if (query.since) {
         conditions.push('updatedAt > ?');
         params.push(query.since.toISOString());
       }
@@ -271,18 +316,55 @@ export class SQLiteAdapter extends BaseAdapter {
 
       let sql = `SELECT * FROM ${this.identifier(query.table)}`;
       if (conditions.length > 0) sql += ` WHERE ${conditions.join(' AND ')}`;
-      sql += ` ORDER BY id ASC`;
+      sql += ` ORDER BY updatedAt ASC, id ASC`;
       if (query.limit) sql += ` LIMIT ${Number(query.limit)}`;
       if (query.offset) sql += ` OFFSET ${Number(query.offset)}`;
 
       const rows = await this.queryAll<Record<string, unknown>>(sql, params);
 
-      // Map SQL columns -> SyncEngine wire format (_version, _deletedAt).
-      const mapped = rows.map(row => ({
-        ...row,
-        _version: row.version,
-        _deletedAt: (row.deleted_at ?? null) as string | null
-      })) as unknown as T[];
+      const info = await this.queryAll<{ name: string; type: string }>(
+        `PRAGMA table_info(${this.identifier(query.table)})`
+      );
+      const jsonCols = new Set(info.filter(c => (c.type || '').toUpperCase() === 'JSON').map(c => c.name));
+      const boolCols = new Set(info.filter(c => (c.type || '').toUpperCase() === 'BOOLEAN').map(c => c.name));
+
+      // Map SQL columns -> SyncEngine wire format (_version, _deletedAt) & deserialize JSON/BOOLEAN
+      const mapped = rows.map(row => {
+        const item: Record<string, unknown> = {
+          ...row,
+          _version: row.version,
+          _deletedAt: (row.deleted_at ?? null) as string | null
+        };
+        for (const col of jsonCols) {
+          if (item[col] !== null && typeof item[col] === 'string') {
+            try {
+              item[col] = JSON.parse(item[col] as string);
+            } catch {
+              // preserve plain string if parse fails
+            }
+          }
+        }
+        for (const col of boolCols) {
+          if (item[col] !== null && item[col] !== undefined) {
+            item[col] = Boolean(item[col]);
+          }
+        }
+        return item;
+      }) as unknown as T[];
+
+      const hasMore = query.limit !== undefined && rows.length >= query.limit;
+      let nextCursor: string | undefined = undefined;
+      if (hasMore && rows.length > 0) {
+        const lastRow = rows[rows.length - 1];
+        const raw = `${lastRow.updatedAt || ''}__${lastRow.id || ''}`;
+        nextCursor = typeof btoa === 'function' ? btoa(raw) : Buffer.from(raw).toString('base64');
+      }
+
+      Object.defineProperties(mapped, {
+        serverTime: { value: new Date().toISOString(), writable: true, configurable: true, enumerable: false },
+        cursor: { value: nextCursor, writable: true, configurable: true, enumerable: false },
+        hasMore: { value: hasMore, writable: true, configurable: true, enumerable: false }
+      });
 
       this.updateState({ lastPullAt: new Date(), status: SyncStatus.IDLE });
       return mapped;
@@ -431,7 +513,8 @@ export class SQLiteAdapter extends BaseAdapter {
     this.requireConnected();
 
     if (this.useHttp) {
-      return await this.httpGet<TableSchema>(this.buildUrl(`/schema/${table}`));
+      const res = await this.httpGet<TableSchema>(this.buildUrl(`/schema/${table}`));
+      return res.data;
     }
 
     const rows = await this.queryAll<{
@@ -490,18 +573,43 @@ export class SQLiteAdapter extends BaseAdapter {
   }
 
   private toSqlType(type?: string): string {
-    if (type === 'integer' || type === 'boolean') return 'INTEGER';
-    return 'TEXT';
+    switch ((type ?? 'string').toLowerCase()) {
+      case 'integer':
+        return 'INTEGER';
+      case 'boolean':
+        return 'BOOLEAN';
+      case 'real':
+      case 'float':
+      case 'number':
+        return 'REAL';
+      case 'json':
+      case 'array':
+      case 'object':
+        return 'JSON';
+      case 'datetime':
+      case 'string':
+      case 'text':
+      default:
+        return 'TEXT';
+    }
   }
 
-  private fromSqliteType(type?: string): 'string' | 'integer' | 'boolean' {
-    if (type === 'INTEGER') return 'integer';
+  private fromSqliteType(type?: string): string {
+    const u = (type ?? '').toUpperCase();
+    if (u === 'INTEGER') return 'integer';
+    if (u === 'REAL' || u === 'NUMERIC') return 'real';
+    if (u === 'BOOLEAN') return 'boolean';
+    if (u === 'JSON') return 'json';
     return 'string';
   }
 
   private toSqlValue(val: unknown): unknown {
     if (val === null || val === undefined) return null;
     if (typeof val === 'boolean') return val ? 1 : 0;
+    if (val instanceof Date) return val.toISOString();
+    if (Array.isArray(val) || (typeof val === 'object' && val !== null)) {
+      return JSON.stringify(val);
+    }
     return val;
   }
 }

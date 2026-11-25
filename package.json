@@ -14,6 +14,10 @@
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
     },
+    "./server": {
+      "import": "./dist/server.js",
+      "types": "./dist/server.d.ts"
+    },
     "./sync-server": {
       "import": "./dist/sync-server.js",
       "types": "./dist/sync-server.d.ts"
@@ -61,10 +65,16 @@
     "type": "git",
     "url": "git+https://github.com/vanntastic/idb-activerecord.git"
   },
-  "dependencies": {
+  "peerDependencies": {
     "@libsql/client": "^0.17.3"
   },
+  "peerDependenciesMeta": {
+    "@libsql/client": {
+      "optional": true
+    }
+  },
   "devDependencies": {
+    "@libsql/client": "^0.17.3",
     "@playwright/test": "^1.60.0",
     "@vitest/coverage-v8": "^4.1.8",
     "esbuild": "^0.28.0",
