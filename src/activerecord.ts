@@ -420,6 +420,10 @@ export class ActiveRecord<_T = any> {
         (this as any).afterCreate(instance);
       }
 
+      if ((this as any).isSyncEnabled && (this as any).db) {
+        ActiveRecord.logChange((this as any).db, (this as any).tableName, id, 'create', instance);
+      }
+
       ActiveRecord.notifySubscribers({
         table: (this as any).tableName,
         action: 'create',
@@ -530,9 +534,19 @@ export class ActiveRecord<_T = any> {
     if (constructor.storage) {
       await constructor.storage.put(constructor.tableName, updatedData);
       Object.assign(this, data);
+      if (constructor.isTimestampsEnabled) {
+        Object.assign(this, { updatedAt: updatedData.updatedAt });
+      }
+      if (constructor.isVersioningEnabled) {
+        Object.assign(this, { _version: updatedData._version });
+      }
 
       if (constructor.afterUpdate) {
         constructor.afterUpdate(this);
+      }
+
+      if (constructor.isSyncEnabled && constructor.db) {
+        ActiveRecord.logChange(constructor.db, constructor.tableName, this.id!, 'update', updatedData);
       }
 
       ActiveRecord.notifySubscribers({
@@ -611,6 +625,10 @@ export class ActiveRecord<_T = any> {
           constructor.afterDestroy(this);
         }
 
+        if (constructor.isSyncEnabled && constructor.db) {
+          ActiveRecord.logChange(constructor.db, constructor.tableName, this.id!, 'delete', deletedData);
+        }
+
         ActiveRecord.notifySubscribers({
           table: constructor.tableName,
           action: 'destroy',
@@ -663,6 +681,10 @@ export class ActiveRecord<_T = any> {
 
       if (constructor.afterDestroy) {
         constructor.afterDestroy(this);
+      }
+
+      if (constructor.isSyncEnabled && constructor.db) {
+        ActiveRecord.logChange(constructor.db, constructor.tableName, this.id!, 'delete', { id: this.id });
       }
 
       ActiveRecord.notifySubscribers({
@@ -726,6 +748,10 @@ export class ActiveRecord<_T = any> {
       const instance = Object.create(this.prototype);
       Object.assign(instance, restored);
       ActiveRecord._defineRelationshipAccessors(instance);
+
+      if ((this as any).isSyncEnabled && (this as any).db) {
+        ActiveRecord.logChange((this as any).db, (this as any).tableName, id as any, 'update', restored);
+      }
 
       ActiveRecord.notifySubscribers({
         table: (this as any).tableName,

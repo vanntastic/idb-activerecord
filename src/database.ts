@@ -3,7 +3,7 @@
 import { SyncEngine, SyncOptions } from './sync-engine.js';
 import { SyncAdapter, SyncResult, ConflictStrategy, IndexDef } from './sync-adapter.js';
 import { ActiveRecord, ActiveRecordDefaults } from './activerecord.js';
-import { StorageAdapter, IndexedDBStorageAdapter } from './storage-adapter.js';
+import { StorageAdapter } from './storage-adapter.js';
 import { TursoAdapter } from './adapters/turso-adapter.js';
 
 export interface AutoSyncOptions {
@@ -209,10 +209,11 @@ export class Database {
       request.onerror = () => reject(request.error);
       request.onsuccess = async () => {
         this.db = request.result;
-        const idbStorage = new IndexedDBStorageAdapter(this.db);
         this.models.forEach((model) => {
           model.setDatabase(this.db!);
-          model.setStorage(idbStorage);
+          if (this.storage) {
+            model.setStorage(this.storage);
+          }
           model.setModelRegistry(this.models);
         });
         this.validateRelationships();
@@ -337,6 +338,10 @@ export class Database {
       this.db.close();
       this.db = null;
     }
+    this.models.forEach((model) => {
+      model.setDatabase(null);
+      model.setStorage(null);
+    });
   }
 
   async migrateUp(): Promise<void> {
