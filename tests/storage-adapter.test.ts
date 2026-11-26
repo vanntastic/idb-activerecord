@@ -48,119 +48,171 @@ class MockSqliteDriver {
     }
 
     // CREATE TABLE "table" (...)
-    const createMatch = /^CREATE TABLE "([^"]+)" \(([\s\S]+)\)$/i.exec(trimmed);
-    if (createMatch) {
-      const name = createMatch[1]!;
-      const colsBlock = createMatch[2]!;
-      const cols = colsBlock.split(/,(?![^()]*\))/).map(line => {
-        const match = /^"([^"]+)"\s+(\S+)/.exec(line.trim());
-        return { name: match ? match[1] : line.trim(), type: match ? match[2] : 'TEXT' };
-      });
-      this.tables.set(name, { columns: cols, rows: [], nextId: 1 });
-      return [];
+    if (trimmed.startsWith('CREATE TABLE "')) {
+      const fromPrefix = 'CREATE TABLE "';
+      const endQuote = trimmed.indexOf('"', fromPrefix.length);
+      const openParen = trimmed.indexOf('(', endQuote);
+      const closeParen = trimmed.lastIndexOf(')');
+      if (endQuote !== -1 && openParen !== -1 && closeParen > openParen) {
+        const name = trimmed.slice(fromPrefix.length, endQuote);
+        const colsBlock = trimmed.slice(openParen + 1, closeParen);
+        const cols = colsBlock.split(',').map(line => {
+          const l = line.trim();
+          const firstQuote = l.indexOf('"');
+          const secondQuote = l.indexOf('"', firstQuote + 1);
+          if (firstQuote !== -1 && secondQuote !== -1) {
+            const colName = l.slice(firstQuote + 1, secondQuote);
+            const rest = l.slice(secondQuote + 1).trim();
+            const colType = rest.split(/\s+/)[0] || 'TEXT';
+            return { name: colName, type: colType };
+          }
+          return { name: l, type: 'TEXT' };
+        });
+        this.tables.set(name, { columns: cols, rows: [], nextId: 1 });
+        return [];
+      }
     }
 
     // ALTER TABLE "table" ADD COLUMN ...
-    const alterMatch = /^ALTER TABLE "([^"]+)" ADD COLUMN "([^"]+)"\s*(\S+)?/i.exec(trimmed);
-    if (alterMatch) {
-      const name = alterMatch[1]!;
-      const colName = alterMatch[2]!;
-      const colType = alterMatch[3] || 'TEXT';
-      const t = this.tables.get(name);
-      if (t) t.columns.push({ name: colName, type: colType });
-      return [];
+    if (trimmed.startsWith('ALTER TABLE "')) {
+      const fromPrefix = 'ALTER TABLE "';
+      const endQuote = trimmed.indexOf('"', fromPrefix.length);
+      const addColIdx = trimmed.indexOf('ADD COLUMN "', endQuote);
+      if (endQuote !== -1 && addColIdx !== -1) {
+        const name = trimmed.slice(fromPrefix.length, endQuote);
+        const colStart = addColIdx + 'ADD COLUMN "'.length;
+        const colEnd = trimmed.indexOf('"', colStart);
+        if (colEnd !== -1) {
+          const colName = trimmed.slice(colStart, colEnd);
+          const colType = trimmed.slice(colEnd + 1).trim() || 'TEXT';
+          const t = this.tables.get(name);
+          if (t) t.columns.push({ name: colName, type: colType });
+          return [];
+        }
+      }
     }
 
     // CREATE INDEX ...
-    const indexMatch = /^CREATE (?:UNIQUE )?INDEX IF NOT EXISTS "([^"]+)" ON "([^"]+)" \(([\s\S]+)\)$/i.exec(trimmed);
-    if (indexMatch) {
+    if (trimmed.startsWith('CREATE INDEX') || trimmed.startsWith('CREATE UNIQUE INDEX')) {
       return [];
     }
 
-    // SELECT * FROM "table" WHERE id = ? LIMIT 1
-    const selectOneMatch = /^SELECT \* FROM "([^"]+)" WHERE id = \? LIMIT 1$/i.exec(trimmed);
-    if (selectOneMatch) {
-      const name = selectOneMatch[1]!;
-      const t = this.tables.get(name);
-      if (!t) return [];
-      const row = t.rows.find(r => r.id === args[0]);
-      return row ? [row] : [];
-    }
+    // SELECT * FROM "table" ...
+    if (trimmed.startsWith('SELECT * FROM "')) {
+      const fromPrefix = 'SELECT * FROM "';
+      const endQuote = trimmed.indexOf('"', fromPrefix.length);
+      if (endQuote !== -1) {
+        const name = trimmed.slice(fromPrefix.length, endQuote);
+        const t = this.tables.get(name);
+        if (!t) return [];
 
-    // SELECT * FROM "table" [WHERE ...] [ORDER BY ...] [LIMIT ...] [OFFSET ...]
-    const selectMatch = /^SELECT \* FROM "([^"]+)"(?: WHERE ([\s\S]+?))?(?: ORDER BY "([^"]+)" (ASC|DESC))?(?: LIMIT (\d+))?(?: OFFSET (\d+))?$/i.exec(trimmed);
-    if (selectMatch) {
-      const name = selectMatch[1]!;
-      const t = this.tables.get(name);
-      if (!t) return [];
-      let rows = [...t.rows];
-      const whereClause = selectMatch[2];
-      if (whereClause) {
-        let p = 0;
-        const clauses = whereClause.split(/\s+AND\s+/i);
-        for (const cl of clauses) {
-          if (cl.includes('_deletedAt IS NULL')) {
-            rows = rows.filter(r => !r._deletedAt);
-          } else if (cl.includes(' = ?')) {
-            const col = /"([^"]+)" = \?/.exec(cl)![1]!;
-            const val = args[p++];
-            rows = rows.filter(r => r[col] === val);
-          } else if (cl.includes(' != ?')) {
-            const col = /"([^"]+)" != \?/.exec(cl)![1]!;
-            const val = args[p++];
-            rows = rows.filter(r => r[col] !== val);
-          } else if (cl.includes(' >= ?')) {
-            const col = /"([^"]+)" >= \?/.exec(cl)![1]!;
-            const val = args[p++];
-            rows = rows.filter(r => Number(r[col]) >= Number(val));
-          } else if (cl.includes(' LIKE ?')) {
-            const col = /"([^"]+)" LIKE \?/.exec(cl)![1]!;
-            const val = String(args[p++]).replace(/%/g, '');
-            rows = rows.filter(r => String(r[col] ?? '').includes(val));
+        let rest = trimmed.slice(endQuote + 1).trim();
+
+        // Check for WHERE id = ? LIMIT 1 fast path
+        if (rest === 'WHERE id = ? LIMIT 1') {
+          const row = t.rows.find(r => r.id === args[0]);
+          return row ? [row] : [];
+        }
+
+        let rows = [...t.rows];
+
+        // Parse OFFSET if present
+        const offsetIdx = rest.lastIndexOf(' OFFSET ');
+        let offset = 0;
+        if (offsetIdx !== -1) {
+          offset = Number(rest.slice(offsetIdx + 8).trim()) || 0;
+          rest = rest.slice(0, offsetIdx).trim();
+        }
+
+        // Parse LIMIT if present
+        const limitIdx = rest.lastIndexOf(' LIMIT ');
+        let limit: number | undefined;
+        if (limitIdx !== -1) {
+          limit = Number(rest.slice(limitIdx + 7).trim());
+          rest = rest.slice(0, limitIdx).trim();
+        }
+
+        // Parse ORDER BY if present
+        const orderIdx = rest.indexOf(' ORDER BY "');
+        if (orderIdx !== -1) {
+          const orderPart = rest.slice(orderIdx + 11).trim();
+          rest = rest.slice(0, orderIdx).trim();
+          const orderColEnd = orderPart.indexOf('"');
+          if (orderColEnd !== -1) {
+            const orderCol = orderPart.slice(0, orderColEnd);
+            const orderDir = orderPart.slice(orderColEnd + 1).trim();
+            rows.sort((a, b) => {
+              const aVal = a[orderCol];
+              const bVal = b[orderCol];
+              const cmp = aVal > bVal ? 1 : aVal < bVal ? -1 : 0;
+              return orderDir === 'DESC' ? -cmp : cmp;
+            });
           }
         }
+
+        // Parse WHERE if present
+        if (rest.startsWith('WHERE ')) {
+          const whereClause = rest.slice(6).trim();
+          let p = 0;
+          const clauses = whereClause.split(' AND ');
+          for (const rawCl of clauses) {
+            const cl = rawCl.trim();
+            if (cl.includes('_deletedAt IS NULL')) {
+              rows = rows.filter(r => !r._deletedAt);
+            } else if (cl.endsWith(' = ?')) {
+              const col = cl.slice(1, cl.indexOf('"', 1));
+              const val = args[p++];
+              rows = rows.filter(r => r[col] === val);
+            } else if (cl.endsWith(' != ?')) {
+              const col = cl.slice(1, cl.indexOf('"', 1));
+              const val = args[p++];
+              rows = rows.filter(r => r[col] !== val);
+            } else if (cl.endsWith(' >= ?')) {
+              const col = cl.slice(1, cl.indexOf('"', 1));
+              const val = args[p++];
+              rows = rows.filter(r => Number(r[col]) >= Number(val));
+            } else if (cl.endsWith(' LIKE ?')) {
+              const col = cl.slice(1, cl.indexOf('"', 1));
+              const val = String(args[p++]).replace(/%/g, '');
+              rows = rows.filter(r => String(r[col] ?? '').includes(val));
+            }
+          }
+        }
+
+        if (offset) rows = rows.slice(offset);
+        if (limit !== undefined) rows = rows.slice(0, limit);
+        return rows;
       }
-
-      const orderCol = selectMatch[3];
-      const orderDir = selectMatch[4];
-      if (orderCol) {
-        rows.sort((a, b) => {
-          const aVal = a[orderCol];
-          const bVal = b[orderCol];
-          const res = aVal > bVal ? 1 : aVal < bVal ? -1 : 0;
-          return orderDir === 'DESC' ? -res : res;
-        });
-      }
-
-      const limit = selectMatch[5] ? Number(selectMatch[5]) : undefined;
-      const offset = selectMatch[6] ? Number(selectMatch[6]) : 0;
-      if (offset) rows = rows.slice(offset);
-      if (limit !== undefined) rows = rows.slice(0, limit);
-
-      return rows;
     }
 
     // INSERT INTO "table" ... VALUES ... ON CONFLICT
-    const insertMatch = /^INSERT INTO "([^"]+)" \(([^)]+)\)\s+VALUES \(([^)]+)\)(?:\s+ON CONFLICT.+)?$/i.exec(trimmed);
-    if (insertMatch) {
-      const name = insertMatch[1]!;
-      let t = this.tables.get(name);
-      if (!t) {
-        this.tables.set(name, { columns: [], rows: [], nextId: 1 });
-        t = this.tables.get(name)!;
-      }
-      const cols = insertMatch[2]!.split(',').map(s => s.trim().replace(/^"|"$/g, ''));
-      const row: any = {};
-      cols.forEach((c, i) => (row[c] = args[i]));
-      if (!row.id) row.id = String(t.nextId++);
+    if (trimmed.startsWith('INSERT INTO "')) {
+      const fromPrefix = 'INSERT INTO "';
+      const endQuote = trimmed.indexOf('"', fromPrefix.length);
+      const openCols = trimmed.indexOf('(', endQuote);
+      const closeCols = trimmed.indexOf(')', openCols);
+      const valuesIdx = trimmed.indexOf('VALUES (', closeCols);
+      const closeVals = trimmed.indexOf(')', valuesIdx + 8);
+      if (endQuote !== -1 && openCols !== -1 && closeCols !== -1 && valuesIdx !== -1 && closeVals !== -1) {
+        const name = trimmed.slice(fromPrefix.length, endQuote);
+        let t = this.tables.get(name);
+        if (!t) {
+          this.tables.set(name, { columns: [], rows: [], nextId: 1 });
+          t = this.tables.get(name)!;
+        }
+        const cols = trimmed.slice(openCols + 1, closeCols).split(',').map(s => s.trim().replace(/^"|"$/g, ''));
+        const row: any = {};
+        cols.forEach((c, i) => (row[c] = args[i]));
+        if (!row.id) row.id = String(t.nextId++);
 
-      const idx = t.rows.findIndex(r => r.id === row.id);
-      if (idx >= 0) {
-        t.rows[idx] = { ...t.rows[idx], ...row };
-      } else {
-        t.rows.push(row);
+        const idx = t.rows.findIndex(r => r.id === row.id);
+        if (idx >= 0) {
+          t.rows[idx] = { ...t.rows[idx], ...row };
+        } else {
+          t.rows.push(row);
+        }
+        return [];
       }
-      return [];
     }
 
     // DELETE FROM "table" WHERE id = ?

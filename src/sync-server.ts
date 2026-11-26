@@ -92,7 +92,7 @@ export class SyncServer {
         await this.handleRequest(req, res);
       } catch (err) {
         console.error('Request error:', err);
-        sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) });
+        sendJson(res, 500, { error: 'Internal server error' });
       }
     });
 
@@ -157,7 +157,8 @@ export class SyncServer {
         const schema = await this.adapter.getRemoteSchema(table);
         return sendJson(res, 200, schema);
       } catch (err) {
-        return sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) });
+        console.error('Error getting remote schema:', err);
+        return sendJson(res, 500, { error: 'Internal server error' });
       }
     }
 
@@ -177,7 +178,8 @@ export class SyncServer {
         await this.adapter.ensureTable(table, columns);
         return sendJson(res, 200, { table, ensured: true });
       } catch (err) {
-        return sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) });
+        console.error('Error ensuring table schema:', err);
+        return sendJson(res, 500, { error: 'Internal server error' });
       }
     }
 
@@ -227,7 +229,8 @@ export class SyncServer {
         });
         return sendJson(res, 200, rows);
       } catch (err) {
-        return sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) });
+        console.error('Error pulling records:', err);
+        return sendJson(res, 500, { error: 'Internal server error' });
       }
     }
 
@@ -253,7 +256,8 @@ export class SyncServer {
           }))
         });
       } catch (err) {
-        return sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) });
+        console.error('Error pushing records:', err);
+        return sendJson(res, 500, { error: 'Internal server error' });
       }
     }
 
@@ -269,7 +273,8 @@ export class SyncServer {
         const result = await this.adapter.push([{ id: idStr, _deletedAt: new Date().toISOString(), owner_id: ownerId } as any], { table });
         return sendJson(res, 200, { deleted: result.pushed });
       } catch (err) {
-        return sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) });
+        console.error('Error deleting record:', err);
+        return sendJson(res, 500, { error: 'Internal server error' });
       }
     }
 
