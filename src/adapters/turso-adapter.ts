@@ -321,6 +321,15 @@ export class TursoAdapter extends BaseAdapter {
         return rows;
       }
 
+      const existing = await this.queryAll<{ name: string }>(
+        `SELECT name FROM sqlite_master WHERE type='table' AND name = ?`,
+        [query.table]
+      );
+      if (existing.length === 0) {
+        this.updateState({ lastPullAt: new Date(), status: SyncStatus.IDLE });
+        return [] as T[];
+      }
+
       const conditions: string[] = [];
       const params: unknown[] = [];
 

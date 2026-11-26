@@ -81,7 +81,7 @@ The API server (`localhost:3001`) exposes:
 
 ### Scenario 4: Offline-first
 
-1. Stop the API server (Ctrl+C in the terminal running `example:sync-api`)
+1. Stop the API server (Ctrl+C in the terminal running `npm run example:sqlite`)
 2. Add and edit tasks locally — they queue up in `__sync_changes` (see **Pending** counter)
 3. Restart the API server
 4. Click **🔄 Full Sync** — all queued changes push at once

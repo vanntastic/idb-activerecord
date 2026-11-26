@@ -97,7 +97,7 @@ async function init() {
       onError: (table, err) => logAction(`❌ Auto-sync ${table} failed: ${err.message}`)
     });
   } catch (err) {
-    logAction(`⚠️ Could not connect to ${API_URL}. Run: npm run example:sync-api`);
+    logAction(`⚠️ Could not connect to ${API_URL}. Run: npm run example:sqlite`);
     console.error(err);
   }
 

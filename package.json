@@ -73,6 +73,7 @@
     "example": "node examples/run-all.js",
     "example:static": "node examples/server.js",
     "example:sqlite": "node examples/sqlite-sync/server.js",
+    "example:sync-api": "node examples/sqlite-sync/server.js",
     "example:turso": "node examples/turso-sync/run.js",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",

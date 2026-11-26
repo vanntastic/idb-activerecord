@@ -209,7 +209,7 @@ export class SyncServer {
     }
 
     if (!ownerId) {
-      ownerId = this.config.defaultOwnerId || url.searchParams.get('owner_id') || 'demo';
+      ownerId = this.config.defaultOwnerId || url.searchParams.get('owner_id') || null;
     }
 
     // GET /:table
@@ -224,7 +224,7 @@ export class SyncServer {
         const rows = await this.adapter.pull({
           table: tableMatch,
           since: since ? new Date(since) : undefined,
-          where: { owner_id: ownerId },
+          where: ownerId ? { owner_id: ownerId } : undefined,
           includeDeleted
         });
         return sendJson(res, 200, rows);
@@ -240,7 +240,7 @@ export class SyncServer {
       const records = Array.isArray(body) ? body : [body];
       for (const r of records) {
         if (r && typeof r === 'object') {
-          r.owner_id = ownerId;
+          r.owner_id = (authFn && ownerId) ? ownerId : (r.owner_id || ownerId || 'demo');
         }
       }
       if (this.routes.postTable) {
