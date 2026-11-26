@@ -25,6 +25,7 @@ export interface AdapterConfig {
 export interface SyncQuery {
   table: string;
   since?: Date;
+  cursor?: string;
   where?: Record<string, unknown>;
   limit?: number;
   offset?: number;
@@ -168,9 +169,11 @@ export interface SyncAdapter {
 
   /**
    * Ensure a table exists on the remote, creating it if necessary.
-   * columns is an optional hint; the server may infer schema from first push.
+   * columns is an optional hint; indexes is an optional list of index definitions.
+   * Can also accept a single TableSchema object.
    */
-  ensureTable(table: string, columns?: ColumnDef[]): Promise<void>;
+  ensureTable(table: string, columns?: ColumnDef[], indexes?: IndexDef[]): Promise<void>;
+  ensureTable(schema: TableSchema): Promise<void>;
 
   /**
    * Resolve a conflict between local and remote records
@@ -242,7 +245,11 @@ export abstract class BaseAdapter implements SyncAdapter {
    */
   abstract applyMigration(migration: SyncMigration): Promise<void>;
 
-  async ensureTable(_table: string, _columns?: ColumnDef[]): Promise<void> {
+  async ensureTable(
+    _tableOrSchema: string | TableSchema,
+    _columns?: ColumnDef[],
+    _indexes?: IndexDef[]
+  ): Promise<void> {
     // no-op by default; subclasses may override
   }
 

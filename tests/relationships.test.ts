@@ -38,7 +38,9 @@ describe('ActiveRecord Relationships', () => {
 
       const profile = Object.create(Profile.prototype);
       Object.assign(profile, { id: 'profile-1', usersId: 'user-1' });
-      vi.spyOn(Profile, 'where').mockReturnValue({ first: vi.fn().mockResolvedValue(profile) } as any);
+      vi.spyOn(Profile, 'where').mockImplementation((fk: string) => ({
+        first: vi.fn().mockImplementation(async () => fk === 'usersId' ? profile : null)
+      } as any));
 
       const user = Object.create(User.prototype);
       Object.assign(user, { id: 'user-1' });
@@ -119,7 +121,9 @@ describe('ActiveRecord Relationships', () => {
       const posts = [
         Object.assign(Object.create(Post.prototype), { id: 'post-1', usersId: 'user-1' })
       ];
-      vi.spyOn(Post, 'where').mockReturnValue({ all: vi.fn().mockResolvedValue(posts) } as any);
+      vi.spyOn(Post, 'where').mockImplementation((fk: string) => ({
+        all: vi.fn().mockImplementation(async () => fk === 'usersId' ? posts : [])
+      } as any));
 
       const user = Object.create(User.prototype);
       Object.assign(user, { id: 'user-1' });
@@ -407,6 +411,114 @@ describe('ActiveRecord Relationships', () => {
 
       const result = await post.belongsTo('author');
       expect(result).toBeNull();
+    });
+  });
+
+  describe('singularize helper & foreign key conventions', () => {
+    it('handles common English plurals correctly', async () => {
+      const { singularize } = await import('../src/activerecord');
+      expect(singularize('users')).toBe('user');
+      expect(singularize('posts')).toBe('post');
+      expect(singularize('tasks')).toBe('task');
+      expect(singularize('categories')).toBe('category');
+      expect(singularize('statuses')).toBe('status');
+      expect(singularize('houses')).toBe('house');
+      expect(singularize('uses')).toBe('use');
+      expect(singularize('boxes')).toBe('box');
+      expect(singularize('classes')).toBe('class');
+      expect(singularize('status')).toBe('status');
+      expect(singularize('box')).toBe('box');
+      expect(singularize('class')).toBe('class');
+    });
+
+    it('hasOne checks singular FK first without fallback if found', async () => {
+      class Profile extends ActiveRecord<any> {
+        static tableName = 'profiles';
+      }
+      class User extends ActiveRecord<any> {
+        static tableName = 'users';
+        static hasOne = { profile: Profile };
+      }
+
+      const profile = Object.assign(Object.create(Profile.prototype), { id: 'prof-1', userId: 'u-1' });
+      const whereSpy = vi.spyOn(Profile, 'where').mockImplementation((fk: string) => ({
+        first: vi.fn().mockImplementation(async () => fk === 'userId' ? profile : null)
+      } as any));
+
+      const user = Object.assign(Object.create(User.prototype), { id: 'u-1' });
+      ActiveRecord._defineRelationshipAccessors(user);
+
+      const result = await user.profile;
+      expect(whereSpy).toHaveBeenCalledTimes(1);
+      expect(whereSpy).toHaveBeenCalledWith('userId', 'u-1');
+      expect(result).toBe(profile);
+    });
+
+    it('hasMany checks singular FK first without fallback if found', async () => {
+      class Task extends ActiveRecord<any> {
+        static tableName = 'tasks';
+      }
+      class User extends ActiveRecord<any> {
+        static tableName = 'users';
+        static hasMany = { tasks: Task };
+      }
+
+      const tasks = [Object.assign(Object.create(Task.prototype), { id: 't-1', userId: 'u-1' })];
+      const whereSpy = vi.spyOn(Task, 'where').mockImplementation((fk: string) => ({
+        all: vi.fn().mockImplementation(async () => fk === 'userId' ? tasks : [])
+      } as any));
+
+      const user = Object.assign(Object.create(User.prototype), { id: 'u-1' });
+      ActiveRecord._defineRelationshipAccessors(user);
+
+      const result = await user.tasks;
+      expect(whereSpy).toHaveBeenCalledTimes(1);
+      expect(whereSpy).toHaveBeenCalledWith('userId', 'u-1');
+      expect(result).toEqual(tasks);
+    });
+
+    it('hydrates relationship accessors in QueryBuilder.all() and QueryBuilder.first()', async () => {
+      class Post extends ActiveRecord<any> {
+        static tableName = 'posts';
+      }
+      class User extends ActiveRecord<any> {
+        static tableName = 'users';
+        static hasMany = { posts: Post };
+      }
+
+      const fakeDb = {
+        transaction: vi.fn().mockReturnValue({
+          objectStore: vi.fn().mockReturnValue({
+            getAll: vi.fn().mockReturnValue({
+              onsuccess: null,
+              onerror: null,
+              result: [
+                { id: 'u-1', name: 'Alice' },
+                { id: 'u-2', name: 'Bob' }
+              ]
+            })
+          })
+        })
+      };
+
+      const qb = new (await import('../src/query-builder')).QueryBuilder('users', fakeDb as any, User);
+      // Simulate IDB request success trigger
+      fakeDb.transaction = vi.fn().mockImplementation(() => ({
+        objectStore: () => ({
+          getAll: () => {
+            const req: any = { result: [{ id: 'u-1', name: 'Alice' }] };
+            setTimeout(() => { if (req.onsuccess) req.onsuccess(); }, 0);
+            return req;
+          }
+        })
+      }));
+
+      vi.spyOn(Post, 'where').mockReturnValue({ all: vi.fn().mockResolvedValue([]) } as any);
+      const results = await qb.where('name', 'Alice').all();
+      expect(results.length).toBe(1);
+      const user = results[0];
+      expect(user).toBeInstanceOf(User);
+      await expect((user as any).posts).resolves.toEqual([]);
     });
   });
 });

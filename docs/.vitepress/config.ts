@@ -7,6 +7,8 @@ export default defineConfig({
   themeConfig: {
     nav: [
       { text: 'Guide', link: '/guide/getting-started' },
+      { text: 'CLI & ERD', link: '/guide/cli-and-erd' },
+      { text: 'Agentic DX', link: '/guide/agentic-dx' },
       { text: 'Sync', link: '/sync/overview' },
       { text: 'Examples', link: '/examples' }
     ],
@@ -15,6 +17,8 @@ export default defineConfig({
         text: 'Guide',
         items: [
           { text: 'Getting Started', link: '/guide/getting-started' },
+          { text: 'CLI & ERD Tooling', link: '/guide/cli-and-erd' },
+          { text: 'Agentic DX', link: '/guide/agentic-dx' },
           { text: 'Models and Relationships', link: '/guide/models' },
           { text: 'Querying', link: '/guide/querying' },
           { text: 'Migrations and Schema', link: '/guide/migrations' },

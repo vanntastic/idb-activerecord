@@ -3,16 +3,25 @@
 
 
 import { spawn } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const envPath = path.join(__dirname, '.env');
 
 const staticServer = spawn('node', ['examples/server.js'], {
   stdio: 'inherit',
   env: { ...process.env }
 });
 
-const tursoServer = spawn('node', [
-  '--env-file=examples/turso-sync/.env',
-  'examples/turso-sync/server.js'
-], {
+const tursoArgs = [];
+if (fs.existsSync(envPath)) {
+  tursoArgs.push(`--env-file=${envPath}`);
+}
+tursoArgs.push(path.join(__dirname, 'server.js'));
+
+const tursoServer = spawn('node', tursoArgs, {
   stdio: 'inherit',
   env: { ...process.env }
 });

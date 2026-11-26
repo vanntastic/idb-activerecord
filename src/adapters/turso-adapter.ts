@@ -13,7 +13,8 @@ import {
   TableSchema,
   SyncMigration,
   SyncStatus,
-  ColumnDef
+  ColumnDef,
+  IndexDef
 } from '../sync-adapter.js';
 import { ActiveRecord } from '../activerecord.js';
 
@@ -43,8 +44,14 @@ interface LibsqlClient {
     lastInsertRowid?: number;
     columns: string[];
   }>;
+  batch?(
+    statements: Array<{ sql: string; args?: unknown[] }>,
+    mode?: 'write' | 'read' | 'deferred'
+  ): Promise<unknown[]>;
   close(): void;
 }
+
+export { TursoStorageAdapter, TursoStorageAdapterConfig } from './turso-storage-adapter.js';
 
 export interface TursoAdapterConfig extends AdapterConfig {
   /**
@@ -67,6 +74,12 @@ export interface TursoAdapterConfig extends AdapterConfig {
   endpointPattern?: string;
   /** Default owner_id when a record doesn't carry one (defaults to 'demo'). */
   defaultOwnerId?: string;
+  /** Custom request headers for HTTP mode */
+  headers?: Record<string, string>;
+  /** Async or sync function providing dynamic auth headers (e.g. Bearer token) for HTTP mode */
+  getAuthHeaders?: () => Promise<Record<string, string>> | Record<string, string>;
+  /** Request credentials for fetch in HTTP mode ('include', 'same-origin', 'omit') */
+  credentials?: RequestCredentials;
 }
 
 // SQL columns reserved for sync meta — excluded from user-column discovery.
@@ -150,22 +163,54 @@ export class TursoAdapter extends BaseAdapter {
     this.updateState({ status: SyncStatus.IDLE });
   }
 
+  private async getHttpHeaders(extraHeaders?: Record<string, string>): Promise<Record<string, string>> {
+    const authHeaders = (this.config as TursoAdapterConfig).getAuthHeaders
+      ? await (this.config as TursoAdapterConfig).getAuthHeaders!()
+      : {};
+    return {
+      'Content-Type': 'application/json',
+      ...this.config.headers,
+      ...authHeaders,
+      ...extraHeaders
+    };
+  }
+
   /**
    * Create the table if missing, or ALTER TABLE ADD COLUMN for any newly
-   * declared columns. SQLite's ALTER TABLE is limited (no drop/rename),
-   * so existing columns are never modified.
+   * declared columns. Also provisions declared indexes.
    */
-  async ensureTable(table: string, columns: ColumnDef[] = []): Promise<void> {
+  async ensureTable(
+    tableOrSchema: string | TableSchema,
+    columns: ColumnDef[] = [],
+    indexes: IndexDef[] = []
+  ): Promise<void> {
     this.requireConnected();
-    if (columns.length === 0) return;
+
+    let table: string;
+    let cols: ColumnDef[];
+    let idxs: IndexDef[];
+
+    if (typeof tableOrSchema === 'object' && tableOrSchema !== null) {
+      table = tableOrSchema.name;
+      cols = tableOrSchema.columns ?? [];
+      idxs = tableOrSchema.indexes ?? [];
+    } else {
+      table = tableOrSchema;
+      cols = columns ?? [];
+      idxs = indexes ?? [];
+    }
+
+    if (cols.length === 0 && idxs.length === 0) return;
 
     if (this.useHttp) {
       // HTTP mode: POST /schema to create/alter table
       const url = this.httpUrl! + '/schema';
-      const body = JSON.stringify({ name: table, columns });
+      const body = JSON.stringify({ name: table, columns: cols, indexes: idxs });
+      const headers = await this.getHttpHeaders();
       const res = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
+        credentials: (this.config as TursoAdapterConfig).credentials,
         body
       });
       if (!res.ok) {
@@ -175,25 +220,49 @@ export class TursoAdapter extends BaseAdapter {
       return;
     }
 
+    const safeTable = this.identifier(table);
     const existing = await this.queryAll<{ name: string }>(
       `SELECT name FROM sqlite_master WHERE type='table' AND name = ?`,
       [table]
     );
 
-    if (existing.length === 0) {
-      const colDefs = columns.map(c => this.columnSql(c)).join(',\n  ');
-      await this.exec(`CREATE TABLE ${this.identifier(table)} (\n  ${colDefs}\n)`);
-      return;
+    if (existing.length === 0 && cols.length > 0) {
+      const colDefs = cols.map(c => this.columnSql(c)).join(',\n  ');
+      await this.exec(`CREATE TABLE ${safeTable} (\n  ${colDefs}\n)`);
+    } else if (cols.length > 0) {
+      const info = await this.queryAll<{ name: string }>(
+        `PRAGMA table_info(${safeTable})`
+      );
+      const have = new Set(info.map(r => r.name));
+      for (const col of cols) {
+        if (!have.has(col.name)) {
+          await this.exec(
+            `ALTER TABLE ${safeTable} ADD COLUMN ${this.columnSql(col)}`
+          );
+        }
+      }
     }
 
-    const info = await this.queryAll<{ name: string }>(
-      `PRAGMA table_info(${this.identifier(table)})`
-    );
-    const have = new Set(info.map(r => r.name));
-    for (const col of columns) {
-      if (!have.has(col.name)) {
+    // Provision declared indexes
+    if (idxs && idxs.length > 0) {
+      for (const idx of idxs) {
+        const indexCols = idx.columns;
+        for (const c of indexCols) {
+          if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(c)) {
+            throw new Error(`Invalid index column identifier: ${c}`);
+          }
+        }
+        if (idx.name && !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(idx.name)) {
+          throw new Error(`Invalid index name: ${idx.name}`);
+        }
+        const indexName = idx.name || `idx_${table}_${indexCols.join('_')}`;
+        if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(indexName)) {
+          throw new Error(`Invalid index name: ${indexName}`);
+        }
+        const unique = idx.unique ? 'UNIQUE ' : '';
+        const colList = indexCols.map(c => this.identifier(c)).join(', ');
         await this.exec(
-          `ALTER TABLE ${this.identifier(table)} ADD COLUMN ${this.columnSql(col)}`
+          `CREATE ${unique}INDEX IF NOT EXISTS ${this.identifier(indexName)} ON ${safeTable} (${colList})`
         );
       }
     }
@@ -212,7 +281,11 @@ export class TursoAdapter extends BaseAdapter {
         const safeTable = encodeURIComponent(query.table);
         const endpoint = this.httpEndpointPattern!.replace('{table}', safeTable);
         const url = new URL(endpoint, this.httpUrl);
-        if (query.since) url.searchParams.set('since', query.since.toISOString());
+        if (query.cursor) {
+          url.searchParams.set('cursor', query.cursor);
+        } else if (query.since) {
+          url.searchParams.set('since', query.since.toISOString());
+        }
         if (query.where) {
           for (const [k, v] of Object.entries(query.where)) {
             url.searchParams.set(k, String(v));
@@ -222,21 +295,63 @@ export class TursoAdapter extends BaseAdapter {
         if (query.limit) url.searchParams.set('limit', String(query.limit));
         if (query.offset) url.searchParams.set('offset', String(query.offset));
 
-        const res = await fetch(url.toString());
+        const headers = await this.getHttpHeaders();
+        const res = await fetch(url.toString(), {
+          headers,
+          credentials: (this.config as TursoAdapterConfig).credentials
+        });
         if (!res.ok) {
           const err = await res.text();
           throw new Error(`Pull failed: ${err}`);
         }
-        const rows = await res.json();
+        const body = await res.json();
+        const rawRows: any[] = Array.isArray(body) ? body : (body.records ?? []);
+        const serverTime = res.headers?.get?.('x-server-time') || (body && body.serverTime) || undefined;
+        const cursor = res.headers?.get?.('x-cursor') || (body && body.cursor) || undefined;
+        const hasMore = body && typeof body.hasMore === 'boolean' ? body.hasMore : (rawRows.length >= (query.limit ?? 1000));
+
+        const rows = rawRows as T[];
+        Object.defineProperties(rows, {
+          serverTime: { value: serverTime, writable: true, configurable: true, enumerable: false },
+          cursor: { value: cursor, writable: true, configurable: true, enumerable: false },
+          hasMore: { value: hasMore, writable: true, configurable: true, enumerable: false }
+        });
 
         this.updateState({ lastPullAt: new Date(), status: SyncStatus.IDLE });
-        return rows as T[];
+        return rows;
+      }
+
+      const existing = await this.queryAll<{ name: string }>(
+        `SELECT name FROM sqlite_master WHERE type='table' AND name = ?`,
+        [query.table]
+      );
+      if (existing.length === 0) {
+        this.updateState({ lastPullAt: new Date(), status: SyncStatus.IDLE });
+        return [] as T[];
       }
 
       const conditions: string[] = [];
       const params: unknown[] = [];
 
-      if (query.since) {
+      if (query.cursor) {
+        let cursorParsed: { updatedAt: string; id: string } | null = null;
+        try {
+          const raw = typeof atob === 'function' ? atob(query.cursor) : Buffer.from(query.cursor, 'base64').toString('utf-8');
+          if (raw.includes('__')) {
+            const idx = raw.indexOf('__');
+            cursorParsed = { updatedAt: raw.slice(0, idx), id: raw.slice(idx + 2) };
+          }
+        } catch {
+          if (query.cursor.includes('__')) {
+            const idx = query.cursor.indexOf('__');
+            cursorParsed = { updatedAt: query.cursor.slice(0, idx), id: query.cursor.slice(idx + 2) };
+          }
+        }
+        if (cursorParsed) {
+          conditions.push(`(updatedAt > ? OR (updatedAt = ? AND id > ?))`);
+          params.push(cursorParsed.updatedAt, cursorParsed.updatedAt, cursorParsed.id);
+        }
+      } else if (query.since) {
         conditions.push(`updatedAt > ?`);
         params.push(query.since.toISOString());
       }
@@ -252,18 +367,58 @@ export class TursoAdapter extends BaseAdapter {
 
       let sql = `SELECT * FROM ${this.identifier(query.table)}`;
       if (conditions.length > 0) sql += ` WHERE ${conditions.join(' AND ')}`;
-      sql += ` ORDER BY id ASC`;
+      sql += ` ORDER BY updatedAt ASC, id ASC`;
       if (query.limit) sql += ` LIMIT ${Number(query.limit)}`;
       if (query.offset) sql += ` OFFSET ${Number(query.offset)}`;
 
       const rows = await this.queryAll<Record<string, unknown>>(sql, params);
 
-      // Map SQL columns -> SyncEngine wire format (_version, _deletedAt).
-      const mapped = rows.map(row => ({
-        ...row,
-        _version: row.version,
-        _deletedAt: (row.deleted_at ?? null) as string | null
-      })) as unknown as T[];
+      const info = await this.queryAll<{ name: string; type: string }>(
+        `PRAGMA table_info(${this.identifier(query.table)})`
+      );
+      const jsonCols = new Set(info.filter(c => (c.type || '').toUpperCase() === 'JSON').map(c => c.name));
+      const boolCols = new Set(info.filter(c => (c.type || '').toUpperCase() === 'BOOLEAN').map(c => c.name));
+
+      // Map SQL columns -> SyncEngine wire format (_version, _deletedAt) & deserialize JSON/BOOLEAN
+      const mapped = rows.map(row => {
+        const item: Record<string, unknown> = {
+          ...row,
+          _version: row.version,
+          _deletedAt: (row.deleted_at ?? null) as string | null
+        };
+        for (const col of jsonCols) {
+          if (item[col] !== null && typeof item[col] === 'string') {
+            try {
+              item[col] = JSON.parse(item[col] as string);
+            } catch {
+              // preserve plain string if parse fails
+            }
+          }
+        }
+        for (const col of boolCols) {
+          if (item[col] !== null && item[col] !== undefined) {
+            item[col] = Boolean(item[col]);
+          }
+        }
+        return item;
+      }) as unknown as T[];
+
+      const hasMore = query.limit !== undefined && rows.length >= query.limit;
+      let nextCursor: string | undefined = undefined;
+      if (hasMore && rows.length > 0) {
+        const lastRow = rows[rows.length - 1];
+        const raw = `${lastRow.updatedAt || ''}__${lastRow.id || ''}`;
+        nextCursor = typeof btoa === 'function' ? btoa(raw) : Buffer.from(raw).toString('base64');
+      }
+
+      Object.defineProperties(mapped, {
+        serverTime: { value: new Date().toISOString(), writable: true, configurable: true, enumerable: false },
+        cursor: { value: nextCursor, writable: true, configurable: true, enumerable: false },
+        hasMore: { value: hasMore, writable: true, configurable: true, enumerable: false }
+      });
+
+      this.updateState({ lastPullAt: new Date(), status: SyncStatus.IDLE });
+      return mapped;
 
       this.updateState({ lastPullAt: new Date(), status: SyncStatus.IDLE });
       return mapped;
@@ -301,9 +456,11 @@ export class TursoAdapter extends BaseAdapter {
         // HTTP mode: POST /:table with records
         const endpoint = this.httpEndpointPattern!.replace('{table}', table);
         const url = this.httpUrl! + endpoint;
+        const headers = await this.getHttpHeaders();
         const res = await fetch(url, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers,
+          credentials: (this.config as TursoAdapterConfig).credentials,
           body: JSON.stringify(records)
         });
         if (!res.ok) {
@@ -333,79 +490,95 @@ export class TursoAdapter extends BaseAdapter {
       );
       const userCols = info.map(r => r.name).filter(c => !META_COLS.has(c));
 
+      const statementsToExecute: Array<{ sql: string; args: unknown[] }> = [];
+
       for (const record of records) {
-        try {
-          const data = record as unknown as Record<string, unknown>;
-          const incomingVersion = (data._version as number) || 1;
-          const deletedAt = (data._deletedAt as string | null) ?? null;
-          const ownerId = (data.owner_id as string) || defaultOwnerId;
-          const updatedAt = (data.updatedAt as string) || now;
+        const data = record as unknown as Record<string, unknown>;
+        const incomingVersion = (data._version as number) || 1;
+        const deletedAt = (data._deletedAt as string | null) ?? null;
+        const ownerId = (data.owner_id as string) || defaultOwnerId;
+        const updatedAt = (data.updatedAt as string) || now;
 
-          // Optimistic concurrency: reject if server version is newer.
-          if (data.id !== undefined && data.id !== null) {
-            const existing = await this.queryAll<{ version: number }>(
-              `SELECT version FROM ${this.identifier(table)} WHERE id = ?`,
-              [data.id]
-            );
-            if (
-              existing.length > 0 &&
-              (existing[0]!.version as number) > incomingVersion
-            ) {
-              result.conflicts += 1;
-              result.errors.push({
-                record,
-                error: `version_conflict: server=${existing[0]!.version} client=${incomingVersion}`
-              });
-              continue;
-            }
+        // Optimistic concurrency: reject if server version is newer.
+        if (data.id !== undefined && data.id !== null) {
+          const existing = await this.queryAll<{ version: number }>(
+            `SELECT version FROM ${this.identifier(table)} WHERE id = ?`,
+            [data.id]
+          );
+          if (
+            existing.length > 0 &&
+            (existing[0]!.version as number) > incomingVersion
+          ) {
+            result.conflicts += 1;
+            result.errors.push({
+              record,
+              error: `version_conflict: server=${existing[0]!.version} client=${incomingVersion}`
+            });
+            continue;
           }
+        }
 
-          const userVals = userCols.map(c => this.toSqlValue(data[c]));
-          const allCols = [
-            ...userCols,
-            'updatedAt',
-            'version',
-            'deleted_at',
-            'owner_id'
-          ];
-          const allVals = [
-            ...userVals,
-            updatedAt,
-            incomingVersion,
-            deletedAt,
-            ownerId
-          ];
+        const userVals = userCols.map(c => this.toSqlValue(data[c]));
+        const allCols = [
+          ...userCols,
+          'updatedAt',
+          'version',
+          'deleted_at',
+          'owner_id'
+        ];
+        const allVals = [
+          ...userVals,
+          updatedAt,
+          incomingVersion,
+          deletedAt,
+          ownerId
+        ];
 
-          if (data.id !== undefined && data.id !== null) {
-            const cols = ['id', ...allCols];
-            const vals = [data.id, ...allVals];
-            const placeholders = cols.map(() => '?').join(', ');
-            const setClauses = allCols
-              .map(c => `${this.identifier(c)} = excluded.${this.identifier(c)}`)
-              .join(', ');
-            await this.exec(
-              `INSERT INTO ${this.identifier(table)} (${cols
-                .map(c => this.identifier(c))
-                .join(', ')}) VALUES (${placeholders}) ` +
-                `ON CONFLICT(id) DO UPDATE SET ${setClauses}`,
-              vals
-            );
-          } else {
-            const placeholders = allCols.map(() => '?').join(', ');
-            await this.exec(
-              `INSERT INTO ${this.identifier(table)} (${allCols
-                .map(c => this.identifier(c))
-                .join(', ')}) VALUES (${placeholders})`,
-              allVals
-            );
-          }
-
-          result.pushed += 1;
-        } catch (err) {
-          result.errors.push({
-            record,
-            error: err instanceof Error ? err.message : String(err)
+        if (data.id !== undefined && data.id !== null) {
+          const cols = ['id', ...allCols];
+          const vals = [data.id, ...allVals];
+          const placeholders = cols.map(() => '?').join(', ');
+          const setClauses = allCols
+            .map(c => `${this.identifier(c)} = excluded.${this.identifier(c)}`)
+            .join(', ');
+          statementsToExecute.push({
+            sql: `INSERT INTO ${this.identifier(table)} (${cols
+              .map(c => this.identifier(c))
+              .join(', ')}) VALUES (${placeholders}) ` +
+              `ON CONFLICT(id) DO UPDATE SET ${setClauses}`,
+            args: vals
           });
+        } else {
+          const placeholders = allCols.map(() => '?').join(', ');
+          statementsToExecute.push({
+            sql: `INSERT INTO ${this.identifier(table)} (${allCols
+              .map(c => this.identifier(c))
+              .join(', ')}) VALUES (${placeholders})`,
+            args: allVals
+          });
+        }
+      }
+
+      if (statementsToExecute.length > 0) {
+        if (this.rawClient?.batch) {
+          await this.rawClient.batch(statementsToExecute, 'write');
+          result.pushed = statementsToExecute.length;
+        } else {
+          await this.exec('BEGIN');
+          try {
+            for (const stmt of statementsToExecute) {
+              await this.exec(stmt.sql, stmt.args);
+            }
+            await this.exec('COMMIT');
+            result.pushed = statementsToExecute.length;
+          } catch (err) {
+            try {
+              await this.exec('ROLLBACK');
+            } catch {
+              // ignore rollback failure
+            }
+            throw err;
+          }
         }
       }
 
@@ -427,7 +600,11 @@ export class TursoAdapter extends BaseAdapter {
     if (this.useHttp) {
       // HTTP mode: GET /schema/:table
       const url = this.httpUrl! + `/schema/${table}`;
-      const res = await fetch(url);
+      const headers = await this.getHttpHeaders();
+      const res = await fetch(url, {
+        headers,
+        credentials: (this.config as TursoAdapterConfig).credentials
+      });
       if (!res.ok) {
         const err = await res.text();
         throw new Error(`Failed to get schema: ${err}`);
@@ -518,12 +695,17 @@ export class TursoAdapter extends BaseAdapter {
   private toSqliteType(t: string | undefined): string {
     switch ((t ?? 'string').toLowerCase()) {
       case 'integer':
-      case 'boolean':
         return 'INTEGER';
+      case 'boolean':
+        return 'BOOLEAN';
       case 'real':
       case 'float':
       case 'number':
         return 'REAL';
+      case 'json':
+      case 'array':
+      case 'object':
+        return 'JSON';
       case 'datetime':
       case 'string':
       case 'text':
@@ -536,6 +718,8 @@ export class TursoAdapter extends BaseAdapter {
     const u = (t ?? '').toUpperCase();
     if (u === 'INTEGER') return 'integer';
     if (u === 'REAL' || u === 'NUMERIC') return 'real';
+    if (u === 'BOOLEAN') return 'boolean';
+    if (u === 'JSON') return 'json';
     return 'string';
   }
 
@@ -547,9 +731,12 @@ export class TursoAdapter extends BaseAdapter {
   }
 
   private toSqlValue(v: unknown): unknown {
-    if (v === undefined) return null;
+    if (v === undefined || v === null) return null;
     if (typeof v === 'boolean') return v ? 1 : 0;
     if (v instanceof Date) return v.toISOString();
+    if (Array.isArray(v) || (typeof v === 'object' && v !== null)) {
+      return JSON.stringify(v);
+    }
     return v;
   }
 

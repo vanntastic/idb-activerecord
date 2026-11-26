@@ -12,6 +12,18 @@ export interface SyncServerConfig {
   adapter: BaseAdapter;
   /** Custom route handlers (override defaults) */
   routes?: SyncServerRoutes;
+  /**
+   * Optional server-side session user resolver for authentication.
+   * Return userId string, { userId: string }, or null if unauthenticated.
+   */
+  getSessionUser?: (req: http.IncomingMessage) => Promise<string | { userId: string } | null | undefined> | string | { userId: string } | null | undefined;
+  /** Alias for getSessionUser */
+  auth?: (req: http.IncomingMessage) => Promise<string | { userId: string } | null | undefined> | string | { userId: string } | null | undefined;
+  /**
+   * If true, allows requests without an authenticated session.
+   */
+  allowUnauthenticatedDevMode?: boolean;
+  defaultOwnerId?: string;
 }
 
 export interface SyncServerRoutes {
@@ -65,8 +77,10 @@ export class SyncServer {
   private port: number;
   private adapter: BaseAdapter;
   private routes: SyncServerRoutes;
+  private config: SyncServerConfig;
 
   constructor(config: SyncServerConfig) {
+    this.config = config;
     this.port = config.port ?? 3002;
     this.adapter = config.adapter;
     this.routes = config.routes ?? {};
@@ -78,7 +92,7 @@ export class SyncServer {
         await this.handleRequest(req, res);
       } catch (err) {
         console.error('Request error:', err);
-        sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) });
+        sendJson(res, 500, { error: 'Internal server error' });
       }
     });
 
@@ -143,7 +157,8 @@ export class SyncServer {
         const schema = await this.adapter.getRemoteSchema(table);
         return sendJson(res, 200, schema);
       } catch (err) {
-        return sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) });
+        console.error('Error getting remote schema:', err);
+        return sendJson(res, 500, { error: 'Internal server error' });
       }
     }
 
@@ -163,7 +178,8 @@ export class SyncServer {
         await this.adapter.ensureTable(table, columns);
         return sendJson(res, 200, { table, ensured: true });
       } catch (err) {
-        return sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) });
+        console.error('Error ensuring table schema:', err);
+        return sendJson(res, 500, { error: 'Internal server error' });
       }
     }
 
@@ -176,6 +192,26 @@ export class SyncServer {
       return sendJson(res, 200, { applied: true, version: body.version, note: 'no-op by default' });
     }
 
+    // Resolve authenticated ownerId
+    let ownerId: string | null = null;
+    const authFn = this.config.getSessionUser || this.config.auth;
+    if (authFn) {
+      const user = await authFn(req);
+      if (typeof user === 'string' && user.length > 0) {
+        ownerId = user;
+      } else if (user && typeof user === 'object' && typeof user.userId === 'string' && user.userId.length > 0) {
+        ownerId = user.userId;
+      }
+
+      if (!ownerId && !this.config.allowUnauthenticatedDevMode) {
+        return sendJson(res, 401, { error: 'Unauthorized' });
+      }
+    }
+
+    if (!ownerId) {
+      ownerId = this.config.defaultOwnerId || url.searchParams.get('owner_id') || null;
+    }
+
     // GET /:table
     const tableMatch = pathname.match(/^\/([a-z_][a-z0-9_]*)$/i)?.[1];
     if (tableMatch && method === 'GET') {
@@ -183,18 +219,18 @@ export class SyncServer {
         return this.routes.getTable(req, res, tableMatch, url);
       }
       const since = url.searchParams.get('since');
-      const ownerId = url.searchParams.get('owner_id') || 'demo';
       const includeDeleted = url.searchParams.get('include_deleted') === 'true';
       try {
         const rows = await this.adapter.pull({
           table: tableMatch,
           since: since ? new Date(since) : undefined,
-          where: { owner_id: ownerId },
+          where: ownerId ? { owner_id: ownerId } : undefined,
           includeDeleted
         });
         return sendJson(res, 200, rows);
       } catch (err) {
-        return sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) });
+        console.error('Error pulling records:', err);
+        return sendJson(res, 500, { error: 'Internal server error' });
       }
     }
 
@@ -202,6 +238,11 @@ export class SyncServer {
     if (tableMatch && method === 'POST') {
       const body = await readBody(req);
       const records = Array.isArray(body) ? body : [body];
+      for (const r of records) {
+        if (r && typeof r === 'object') {
+          r.owner_id = (authFn && ownerId) ? ownerId : (r.owner_id || ownerId || 'demo');
+        }
+      }
       if (this.routes.postTable) {
         return this.routes.postTable(req, res, tableMatch, records);
       }
@@ -215,7 +256,8 @@ export class SyncServer {
           }))
         });
       } catch (err) {
-        return sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) });
+        console.error('Error pushing records:', err);
+        return sendJson(res, 500, { error: 'Internal server error' });
       }
     }
 
@@ -228,10 +270,11 @@ export class SyncServer {
       }
       // Default implementation: soft delete via push
       try {
-        const result = await this.adapter.push([{ id: idStr, _deletedAt: new Date().toISOString() } as any], { table });
+        const result = await this.adapter.push([{ id: idStr, _deletedAt: new Date().toISOString(), owner_id: ownerId } as any], { table });
         return sendJson(res, 200, { deleted: result.pushed });
       } catch (err) {
-        return sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) });
+        console.error('Error deleting record:', err);
+        return sendJson(res, 500, { error: 'Internal server error' });
       }
     }
 

@@ -9,31 +9,60 @@
   "module": "dist/index.js",
   "browser": "dist/idb-activerecord.min.js",
   "types": "dist/index.d.ts",
+  "bin": {
+    "idb-activerecord": "./dist/cli.js"
+  },
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "require": "./dist/cjs/index.cjs"
+    },
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js",
+      "require": "./dist/cjs/server.cjs"
     },
     "./sync-server": {
+      "types": "./dist/sync-server.d.ts",
       "import": "./dist/sync-server.js",
-      "types": "./dist/sync-server.d.ts"
+      "require": "./dist/cjs/sync-server.cjs"
     },
     "./turso-adapter": {
+      "types": "./dist/adapters/turso-adapter.d.ts",
       "import": "./dist/adapters/turso-adapter.js",
-      "types": "./dist/adapters/turso-adapter.d.ts"
+      "require": "./dist/cjs/adapters/turso-adapter.cjs"
     },
     "./sqlite-adapter": {
+      "types": "./dist/adapters/sqlite-adapter.d.ts",
       "import": "./dist/adapters/sqlite-adapter.js",
-      "types": "./dist/adapters/sqlite-adapter.d.ts"
+      "require": "./dist/cjs/adapters/sqlite-adapter.cjs"
+    },
+    "./agent": {
+      "types": "./dist/agent.d.ts",
+      "import": "./dist/agent.js",
+      "require": "./dist/cjs/agent.cjs"
+    },
+    "./react": {
+      "types": "./dist/react.d.ts",
+      "import": "./dist/react.js",
+      "require": "./dist/cjs/react.cjs"
+    },
+    "./erd": {
+      "types": "./dist/erd.d.ts",
+      "import": "./dist/erd.js",
+      "require": "./dist/cjs/erd.cjs"
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "llms.txt"
   ],
   "scripts": {
-    "build": "tsc && node scripts/build-cdn.js",
+    "build": "tsc && node scripts/build-cdn.js && node scripts/build-cjs.js",
     "build:types": "tsc",
     "build:cdn": "node scripts/build-cdn.js",
+    "build:cjs": "node scripts/build-cjs.js",
     "dev": "tsc --watch",
     "test": "vitest",
     "test:coverage": "vitest --coverage",
@@ -44,6 +73,7 @@
     "example": "node examples/run-all.js",
     "example:static": "node examples/server.js",
     "example:sqlite": "node examples/sqlite-sync/server.js",
+    "example:sync-api": "node examples/sqlite-sync/server.js",
     "example:turso": "node examples/turso-sync/run.js",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
@@ -61,14 +91,26 @@
     "type": "git",
     "url": "git+https://github.com/vanntastic/idb-activerecord.git"
   },
-  "dependencies": {
-    "@libsql/client": "^0.17.3"
+  "peerDependencies": {
+    "@libsql/client": "^0.17.3",
+    "react": "^18.0.0 || ^19.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@libsql/client": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    }
   },
   "devDependencies": {
+    "@libsql/client": "^0.17.3",
     "@playwright/test": "^1.60.0",
+    "@types/react": "^18.3.32",
     "@vitest/coverage-v8": "^4.1.8",
     "esbuild": "^0.28.0",
     "jsdom": "^27.0.1",
+    "react": "^18.3.1",
     "typescript": "^5.3.3",
     "vitepress": "^1.6.4",
     "vitest": "^4.1.8"

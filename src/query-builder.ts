@@ -1,22 +1,29 @@
-// QueryBuilder for chaining database queries
+// QueryBuilder for chaining database queries with strict generic typing
+// and pluggable StorageAdapter support.
+
+import { StorageAdapter } from './storage-adapter.js';
 
 export class QueryBuilder<T> {
   private conditions: Array<{ field: string; operator: string; value: any }> = [];
   private orderByClause?: { field: string; direction: 'asc' | 'desc' };
   private limitValue?: number;
+  private offsetValue?: number;
 
   constructor(
     private tableName: string,
     private db: IDBDatabase | null,
-    private modelClass?: any
+    private modelClass?: any,
+    private storage?: StorageAdapter | null
   ) {}
 
-  where(field: string, operator: string, value?: any): QueryBuilder<T> {
+  where(field: string, operator: string, value?: any): QueryBuilder<T>;
+  where(field: string, value: any): QueryBuilder<T>;
+  where(field: string, operatorOrValue: any, value?: any): QueryBuilder<T> {
     if (value === undefined) {
       // Handle shorthand: where('field', value) becomes where('field', '=', value)
-      this.conditions.push({ field: field, operator: '=', value: operator });
+      this.conditions.push({ field: field, operator: '=', value: operatorOrValue });
     } else {
-      this.conditions.push({ field, operator, value });
+      this.conditions.push({ field, operator: operatorOrValue, value });
     }
     return this;
   }
@@ -31,7 +38,49 @@ export class QueryBuilder<T> {
     return this;
   }
 
+  offset(count: number): QueryBuilder<T> {
+    this.offsetValue = count;
+    return this;
+  }
+
+  private async ensureConnection(): Promise<void> {
+    if (!this.storage && !this.db && this.modelClass?.ensureReady) {
+      await this.modelClass.ensureReady();
+      if (!this.storage && this.modelClass.getStorage) {
+        this.storage = this.modelClass.getStorage();
+      }
+      if (!this.db && this.modelClass.getDatabase) {
+        this.db = this.modelClass.getDatabase();
+      }
+    }
+  }
+
   async all(): Promise<T[]> {
+    await this.ensureConnection();
+
+    if (this.storage) {
+      const isSoftDelete = this.modelClass?.isSoftDeleteEnabled ?? true;
+      const rows = await this.storage.getAll(this.tableName, {
+        where: this.conditions,
+        orderBy: this.orderByClause,
+        limit: this.limitValue,
+        offset: this.offsetValue,
+        includeDeleted: !isSoftDelete
+      });
+
+      if (this.modelClass) {
+        return rows.map((item: any) => {
+          const instance = Object.create(this.modelClass.prototype);
+          Object.assign(instance, item);
+          if (typeof this.modelClass._defineRelationshipAccessors === 'function') {
+            this.modelClass._defineRelationshipAccessors(instance);
+          }
+          return instance as T;
+        });
+      }
+      return rows as T[];
+    }
+
     if (!this.db) throw new Error('Database not connected');
 
     return new Promise((resolve, reject) => {
@@ -43,7 +92,10 @@ export class QueryBuilder<T> {
         let results = request.result;
 
         // Filter out soft-deleted records (check _deletedAt field on raw data)
-        results = results.filter((item: any) => !item._deletedAt);
+        const isSoftDelete = this.modelClass?.isSoftDeleteEnabled ?? true;
+        if (isSoftDelete) {
+          results = results.filter((item: any) => !item._deletedAt);
+        }
 
         // Apply conditions
         results = results.filter((item: any) => {
@@ -63,7 +115,7 @@ export class QueryBuilder<T> {
               case '<=':
                 return itemValue <= condition.value;
               case 'like':
-                return itemValue && itemValue.toString().includes(condition.value.replace('%', ''));
+                return itemValue && itemValue.toString().includes(condition.value.replace(/%/g, ''));
               default:
                 return true;
             }
@@ -80,6 +132,11 @@ export class QueryBuilder<T> {
           });
         }
 
+        // Apply offset
+        if (this.offsetValue) {
+          results = results.slice(this.offsetValue);
+        }
+
         // Apply limit
         if (this.limitValue) {
           results = results.slice(0, this.limitValue);
@@ -90,6 +147,9 @@ export class QueryBuilder<T> {
           results = results.map((item: any) => {
             const instance = Object.create(this.modelClass.prototype);
             Object.assign(instance, item);
+            if (typeof this.modelClass._defineRelationshipAccessors === 'function') {
+              this.modelClass._defineRelationshipAccessors(instance);
+            }
             return instance;
           });
         }
@@ -116,21 +176,29 @@ export class QueryBuilder<T> {
   }
 
   async update(data: any): Promise<void> {
+    await this.ensureConnection();
     const results = await this.all();
-    
+
+    if (this.storage) {
+      for (const item of results) {
+        await this.storage.put(this.tableName, { ...item, ...data });
+      }
+      return;
+    }
+
     if (!this.db) throw new Error('Database not connected');
 
     return new Promise((resolve, reject) => {
       const transaction = this.db!.transaction([this.tableName], 'readwrite');
       const store = transaction.objectStore(this.tableName);
-      
+
       let completed = 0;
       const total = results.length;
 
       results.forEach((item: any) => {
         const updatedData = { ...item, ...data };
         const request = store.put(updatedData);
-        
+
         request.onsuccess = () => {
           completed++;
           if (completed === total) resolve();
@@ -143,20 +211,39 @@ export class QueryBuilder<T> {
   }
 
   async destroyAll(): Promise<void> {
+    await this.ensureConnection();
     const results = await this.all();
-    
+
+    if (this.storage) {
+      const isSoftDelete = this.modelClass?.isSoftDeleteEnabled ?? false;
+      for (const item of results as any[]) {
+        if (isSoftDelete) {
+          await this.storage.put(this.tableName, {
+            ...item,
+            _deletedAt: new Date().toISOString()
+          });
+        } else {
+          await this.storage.delete(this.tableName, item.id);
+        }
+      }
+      return;
+    }
+
     if (!this.db) throw new Error('Database not connected');
 
     return new Promise((resolve, reject) => {
       const transaction = this.db!.transaction([this.tableName], 'readwrite');
       const store = transaction.objectStore(this.tableName);
-      
+
       let completed = 0;
       const total = results.length;
 
       results.forEach((item: any) => {
-        const request = store.delete(item.id);
-        
+        const isSoftDelete = this.modelClass?.isSoftDeleteEnabled ?? false;
+        const request = isSoftDelete
+          ? store.put({ ...item, _deletedAt: new Date().toISOString() })
+          : store.delete(item.id);
+
         request.onsuccess = () => {
           completed++;
           if (completed === total) resolve();

@@ -60,6 +60,10 @@ export class MockIDBObjectStore implements IDBObjectStore {
   add(value: any, key?: any): IDBRequest {
     try {
       let id = key;
+      if (typeof this.keyPath === 'string' && value[this.keyPath] !== undefined) {
+        id = value[this.keyPath];
+      }
+
       if (this.autoIncrement && !id) {
         id = this.nextId++;
         // Persist nextId back to database-level store info
@@ -68,10 +72,6 @@ export class MockIDBObjectStore implements IDBObjectStore {
           const info = db.stores.get(this.name);
           if (info) info.nextId = this.nextId;
         }
-      }
-      // If no explicit key and not auto-incrementing, extract from value
-      if (!id && typeof this.keyPath === 'string') {
-        id = value[this.keyPath];
       }
 
       const record = { ...value };

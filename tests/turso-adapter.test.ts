@@ -79,8 +79,8 @@ class MockSqliteClient implements TursoClient {
       return row ? [{ version: row.version }] : [];
     }
 
-    // SELECT * FROM "foo" WHERE ... ORDER BY id ASC [LIMIT N] [OFFSET N]
-    const selectMatch = /^SELECT \* FROM "([^"]+)"(?: WHERE ([\s\S]+?))? ORDER BY id ASC(?: LIMIT \d+)?(?: OFFSET \d+)?$/i.exec(trimmed);
+    // SELECT * FROM "foo" WHERE ... ORDER BY [updatedAt ASC, ]id ASC [LIMIT N] [OFFSET N]
+    const selectMatch = /^SELECT \* FROM "([^"]+)"(?: WHERE ([\s\S]+?))? ORDER BY (?:updatedAt ASC,\s*)?id ASC(?: LIMIT \d+)?(?: OFFSET \d+)?$/i.exec(trimmed);
     if (selectMatch) {
       const t = this.tables.get(selectMatch[1]!);
       if (!t) return [];
@@ -123,6 +123,17 @@ class MockSqliteClient implements TursoClient {
       }
       if (row.id === undefined) row.id = t.nextId++;
       t.rows.push(row);
+      return [];
+    }
+
+    // CREATE (UNIQUE )?INDEX IF NOT EXISTS ...
+    const indexMatch = /^CREATE (?:UNIQUE )?INDEX IF NOT EXISTS "([^"]+)" ON "([^"]+)" \(([\s\S]+)\)$/i.exec(trimmed);
+    if (indexMatch) {
+      return [];
+    }
+
+    // Transaction commands
+    if (trimmed === 'BEGIN' || trimmed === 'COMMIT' || trimmed === 'ROLLBACK') {
       return [];
     }
 

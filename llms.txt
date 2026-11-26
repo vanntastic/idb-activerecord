@@ -1,0 +1,207 @@
+# idb-activerecord
+
+> ActiveRecord-style ORM for IndexedDB with TypeScript support, reactive queries, and turnkey multi-tenant Turso cloud sync.
+
+idb-activerecord provides an intuitive ActiveRecord ORM interface for client-side persistence in the browser, direct server execution via Turso libSQL, and bidirectional synchronization with multi-tenant authentication.
+
+## Package Exports
+
+- `idb-activerecord` (`.`): Core ActiveRecord model, Database connection, QueryBuilder, Migration, and sync interfaces.
+- `idb-activerecord/server` (`./server`): Web-standard `createSyncHandler` for Astro, Next.js App Router, Hono, and Node servers.
+- `idb-activerecord/agent` (`./agent`): AgentContext, whyIsntThisWorking diagnostics, and code generators.
+- `idb-activerecord/erd` (`./erd`): Bidirectional ERD diagram generation (Mermaid, PlantUML, SQLite DDL) and model scaffolding.
+- `idb-activerecord/react` (`./react`): SSR-safe `useLiveQuery` hook for React.
+- `idb-activerecord/turso-adapter` (`./turso-adapter`): `TursoAdapter` (sync) and `TursoStorageAdapter` (SSR/server mode).
+- `idb-activerecord/sqlite-adapter` (`./sqlite-adapter`): `SQLiteAdapter` for Node.js `node:sqlite`.
+- `idb-activerecord/sync-server` (`./sync-server`): Standalone development sync server.
+
+## Day-0: Zero-Config Quick Start
+
+Agents and developers can define an ActiveRecord model and query it immediately without manual database instantiation, registration, or connection:
+
+```ts
+import { ActiveRecord } from 'idb-activerecord';
+
+class Task extends ActiveRecord {
+  static tableName = 'tasks';
+}
+
+// Automatically connects to Database.default and provisions the store on first query:
+const task = await Task.create({ title: 'Zero-config Day 0 POC' });
+const pending = await Task.where('title', 'like', '%POC%').all();
+```
+
+## Model Definition & Schema Declaration
+
+Declare columns, indexes, validations, and relationships directly on your model:
+
+```ts
+import { ActiveRecord } from 'idb-activerecord';
+
+export class Task extends ActiveRecord<Task> {
+  static tableName = 'tasks';
+  static enableSync = true;
+  static softDelete = true;
+  static timestamps = true;
+
+  static columns = {
+    title: { type: 'string', nullable: false },
+    completed: { type: 'boolean', default: false },
+    priority: { type: 'integer', default: 0 },
+    metadata: { type: 'json', nullable: true }
+  };
+
+  static indexes = [
+    { name: 'idx_tasks_completed', keyPath: 'completed' },
+    { name: 'idx_tasks_priority', keyPath: 'priority' }
+  ];
+
+  static validates = {
+    title: { presence: true, length: { minimum: 1, maximum: 200 } }
+  };
+}
+```
+
+## Reactive UI with React (`useLiveQuery`)
+
+Use `useLiveQuery` to automatically re-render React components whenever records are created, updated, soft-deleted, or synced from the remote server:
+
+```tsx
+import { useLiveQuery } from 'idb-activerecord/react';
+import { Task } from './models/task';
+
+export function TaskList() {
+  const tasks = useLiveQuery(() => Task.where('completed', false).all(), []);
+
+  if (!tasks) return <div>Loading...</div>;
+  return (
+    <ul>
+      {tasks.map(t => (
+        <li key={t.id}>{t.title}</li>
+      ))}
+    </ul>
+  );
+}
+```
+
+## Day-N: Production Turso Cloud Sync
+
+### Server Sync Handler (Next.js App Router)
+
+```ts
+// src/app/api/sync/[...table]/route.ts
+import { createClient } from '@libsql/client';
+import { createSyncHandler } from 'idb-activerecord/server';
+
+const client = createClient({
+  url: process.env.TURSO_DATABASE_URL!,
+  authToken: process.env.TURSO_AUTH_TOKEN!
+});
+
+const handler = createSyncHandler({
+  client,
+  basePath: '/api/sync',
+  autoProvision: true,
+  getSessionUser: async (req) => {
+    const auth = req.headers.get('Authorization');
+    return auth?.replace('Bearer ', '') || null; // 401 if null
+  }
+});
+
+export { handler as GET, handler as POST, handler as DELETE };
+```
+
+### Client Database with 1-Line Auto-Sync
+
+```ts
+import { Database } from 'idb-activerecord';
+import { Task } from './models/task';
+
+const db = new Database('app', {
+  sync: {
+    url: '/api/sync',
+    auto: true,
+    interval: 30000,
+    offlineQueue: true,
+    getAuthHeaders: async () => ({
+      Authorization: `Bearer ${localStorage.getItem('token')}`
+    })
+  }
+});
+
+db.registerModel(Task);
+await db.connect();
+
+// Backfill pre-existing local records created before sync was configured:
+await db.backfillSync();
+```
+
+## Direct SSR Mode (TursoStorageAdapter)
+
+In server-side rendering (SSR), API routes, or Node.js workers where `indexedDB` does not exist, pass `TursoStorageAdapter` to execute models directly against Turso:
+
+```ts
+import { createClient } from '@libsql/client';
+import { Database, ActiveRecord } from 'idb-activerecord';
+import { TursoStorageAdapter } from 'idb-activerecord/turso-adapter';
+
+class Task extends ActiveRecord {
+  static tableName = 'tasks';
+}
+
+const client = createClient({
+  url: process.env.TURSO_DATABASE_URL!,
+  authToken: process.env.TURSO_AUTH_TOKEN!
+});
+
+const db = new Database('app', {
+  storage: new TursoStorageAdapter({ client })
+});
+db.registerModel(Task);
+await db.connect();
+
+// Standard ActiveRecord queries work directly against Turso:
+const activeTasks = await Task.where('completed', false).all();
+```
+
+## Agent Diagnostics & Introspection
+
+```ts
+import { whyIsntThisWorking, explainDatabase } from 'idb-activerecord/agent';
+
+try {
+  await Task.create({ title: 'New task' });
+} catch (err) {
+  const diagnosis = whyIsntThisWorking({ error: err });
+  console.log('Problem:', diagnosis.problem);
+  console.log('Solution:', diagnosis.solution);
+  console.log('Code fix:', diagnosis.codeFix);
+}
+
+// Tree view of database state:
+console.log(db.explain());
+```
+
+## CLI & Bidirectional ERD Tooling
+
+```bash
+# Export SQLite DDL for Turso migrations:
+npx idb-activerecord export-schema --input schema.mmd --format sqlite --sync-columns
+
+# Scaffold TypeScript models from a Mermaid ERD:
+npx idb-activerecord erd generate-models --input schema.mmd --output ./src/models --sync
+
+# Export Mermaid ERD from existing Database or models:
+npx idb-activerecord erd generate --input ./src/db.js --format mermaid
+```
+
+Programmatic ERD API:
+```ts
+import { generateERD, exportToMermaid, parseMermaid, generateModels } from 'idb-activerecord/erd';
+
+const erd = generateERD(db);
+const mermaid = exportToMermaid(erd);
+
+const parsed = parseMermaid(mermaid);
+const models = generateModels(parsed, { language: 'typescript', includeSync: true });
+```
