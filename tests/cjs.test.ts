@@ -1,13 +1,25 @@
 // @vitest-environment node
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import { createRequire } from 'node:module';
+import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import fs from 'node:fs';
 
 const require = createRequire(import.meta.url);
 
 describe('CommonJS (CJS) Compatibility Smoke Tests', () => {
+  beforeAll(() => {
+    const cjsDir = path.resolve('dist/cjs');
+    const indexCjs = path.join(cjsDir, 'index.cjs');
+    if (!fs.existsSync(indexCjs)) {
+      const buildScript = path.resolve('scripts/build-cjs.js');
+      execFileSync(process.execPath, [buildScript], {
+        stdio: 'pipe',
+        env: process.env
+      });
+    }
+  });
   it('requires main entry point (dist/cjs/index.cjs)', () => {
     const indexPath = path.resolve('dist/cjs/index.cjs');
     expect(fs.existsSync(indexPath)).toBe(true);
